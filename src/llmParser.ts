@@ -31,6 +31,7 @@ type LlmParseOptions = {
 };
 
 const pointSchema = z.string().regex(/^[A-Z]$/);
+const circleIdSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/);
 
 const lineRefSchema = z.object({
   a: pointSchema,
@@ -40,7 +41,7 @@ const lineRefSchema = z.object({
 const geometryExtractSchema = z.object({
   points: z.array(pointSchema).default([]),
   segments: z.array(z.object({ a: pointSchema, b: pointSchema, length: z.number().optional() })).default([]),
-  circles: z.array(z.object({ center: pointSchema, radius: z.number().positive() })).default([]),
+  circles: z.array(z.object({ id: circleIdSchema.optional(), center: pointSchema, radius: z.number().positive() })).default([]),
   triangles: z.array(z.object({
     vertices: z.tuple([pointSchema, pointSchema, pointSchema]),
     rightAt: pointSchema.optional(),
@@ -54,16 +55,16 @@ const geometryExtractSchema = z.object({
   altitudes: z.array(z.object({ from: pointSchema, foot: pointSchema, baseA: pointSchema, baseB: pointSchema })).default([]),
   medians: z.array(z.object({ from: pointSchema, foot: pointSchema, baseA: pointSchema, baseB: pointSchema })).default([]),
   angleBisectors: z.array(z.object({ from: pointSchema, foot: pointSchema, sideA: pointSchema, sideB: pointSchema })).default([]),
-  tangents: z.array(z.object({ at: pointSchema, circleCenter: pointSchema.optional() })).default([]),
+  tangents: z.array(z.object({ at: pointSchema, circleId: circleIdSchema.optional(), circleCenter: pointSchema.optional() })).default([]),
   incircles: z.array(z.object({ triangle: z.tuple([pointSchema, pointSchema, pointSchema]).optional() })).default([]),
   circumcircles: z.array(z.object({ triangle: z.tuple([pointSchema, pointSchema, pointSchema]).optional() })).default([]),
   rectangles: z.array(z.object({ vertices: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema]) })).default([]),
   squares: z.array(z.object({ vertices: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema]) })).default([]),
   parallelograms: z.array(z.object({ vertices: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema]) })).default([]),
   trapezoids: z.array(z.object({ vertices: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema]) })).default([]),
-  circlesByDiameter: z.array(z.object({ a: pointSchema, b: pointSchema, centerId: pointSchema.optional() })).default([]),
-  pointsOnCircles: z.array(z.object({ point: pointSchema, center: pointSchema })).default([]),
-  namedTangents: z.array(z.object({ at: pointSchema, center: pointSchema.optional(), linePoint: pointSchema })).default([]),
+  circlesByDiameter: z.array(z.object({ a: pointSchema, b: pointSchema, circleId: circleIdSchema.optional(), centerId: pointSchema.optional() })).default([]),
+  pointsOnCircles: z.array(z.object({ point: pointSchema, circleId: circleIdSchema.optional(), center: pointSchema.optional() })).default([]),
+  namedTangents: z.array(z.object({ at: pointSchema, circleId: circleIdSchema.optional(), center: pointSchema.optional(), linePoint: pointSchema })).default([]),
   perpendicularThroughPointIntersections: z.array(z.object({
     through: pointSchema,
     toLine: lineRefSchema,
@@ -72,6 +73,7 @@ const geometryExtractSchema = z.object({
   })).default([]),
   tangentIntersections: z.array(z.object({
     at: pointSchema,
+    circleId: circleIdSchema.optional(),
     center: pointSchema.optional(),
     withLine: lineRefSchema,
     intersection: pointSchema
@@ -121,7 +123,11 @@ function parseChatCompletionContent(payload: any): string {
 
 function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometryExtractSchema>): GeometryModel {
   const segments: Segment[] = extract.segments;
-  const circles: Circle[] = extract.circles;
+  const circles: Circle[] = extract.circles.map((c, idx) => ({
+    id: c.id ?? `C${idx + 1}`,
+    center: c.center,
+    radius: c.radius
+  }));
   const triangles: Triangle[] = extract.triangles;
   const midpoints: MidpointConstraint[] = extract.midpoints;
   const pointsOnSegments: PointOnSegmentConstraint[] = extract.pointsOnSegments;
@@ -138,10 +144,50 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
   const parallelograms: ParallelogramConstraint[] = extract.parallelograms;
   const trapezoids: TrapezoidConstraint[] = extract.trapezoids;
   const circlesByDiameter: CircleByDiameterConstraint[] = extract.circlesByDiameter;
-  const pointsOnCircles: PointOnCircleConstraint[] = extract.pointsOnCircles;
+  const pointsOnCircles: PointOnCircleConstraint[] = extract.pointsOnCircles.map((it) => ({
+    point: it.point,
+    circleId: it.circleId,
+    center: it.center ?? circles.find((c) => c.id === it.circleId)?.center ?? "O"
+  }));
   const namedTangents: NamedTangentConstraint[] = extract.namedTangents;
   const perpendicularThroughPointIntersections: PerpendicularThroughPointIntersectionConstraint[] = extract.perpendicularThroughPointIntersections;
   const tangentIntersections: TangentIntersectionConstraint[] = extract.tangentIntersections;
+
+  const circleRefSet = new Set<string>();
+  for (const c of circles) {
+    if (c.id) {
+      circleRefSet.add(c.id);
+    }
+  }
+  for (const dc of circlesByDiameter) {
+    if (dc.circleId) {
+      circleRefSet.add(dc.circleId);
+    }
+  }
+
+  const circleCount = circleRefSet.size || circles.length || circlesByDiameter.length;
+  const missingTangentCircleRef = [
+    ...tangents.filter((t) => !t.circleId && !t.circleCenter),
+    ...namedTangents.filter((t) => !t.circleId && !t.center),
+    ...tangentIntersections.filter((t) => !t.circleId && !t.center)
+  ];
+
+  if (circleCount > 1 && missingTangentCircleRef.length > 0) {
+    throw new Error(
+      "Ambiguous tangent constraints: multiple circles detected, but some tangents do not specify circleId or center."
+    );
+  }
+
+  const badCircleRefs = [
+    ...tangents.map((t) => t.circleId).filter(Boolean),
+    ...namedTangents.map((t) => t.circleId).filter(Boolean),
+    ...pointsOnCircles.map((t) => t.circleId).filter(Boolean),
+    ...tangentIntersections.map((t) => t.circleId).filter(Boolean)
+  ].filter((id) => !circleRefSet.has(id as string));
+
+  if (badCircleRefs.length > 0) {
+    throw new Error(`Unknown circleId reference(s): ${[...new Set(badCircleRefs)].join(", ")}`);
+  }
 
   const points = uniqBy(
     [
@@ -192,8 +238,8 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
     squares: uniqBy(squares, (s) => s.vertices.join("")),
     parallelograms: uniqBy(parallelograms, (p) => p.vertices.join("")),
     trapezoids: uniqBy(trapezoids, (t) => t.vertices.join("")),
-    circlesByDiameter: uniqBy(circlesByDiameter, (c) => `${[c.a, c.b].sort().join("")}:${c.centerId ?? ""}`),
-    pointsOnCircles: uniqBy(pointsOnCircles, (p) => `${p.point}:${p.center}`),
+    circlesByDiameter: uniqBy(circlesByDiameter, (c) => `${[c.a, c.b].sort().join("")}:${c.circleId ?? ""}:${c.centerId ?? ""}`),
+    pointsOnCircles: uniqBy(pointsOnCircles, (p) => `${p.point}:${p.circleId ?? ""}:${p.center}`),
     namedTangents: uniqBy(namedTangents, (n) => `${n.at}:${n.linePoint}:${n.center ?? ""}`),
     perpendicularThroughPointIntersections: uniqBy(perpendicularThroughPointIntersections, (p) => `${p.through}:${p.toLine.a}${p.toLine.b}:${p.withLine.a}${p.withLine.b}:${p.intersection}`),
     tangentIntersections: uniqBy(tangentIntersections, (t) => `${t.at}:${t.withLine.a}${t.withLine.b}:${t.intersection}:${t.center ?? ""}`)
@@ -217,6 +263,8 @@ function buildPrompt(problem: string): string {
     "Extract geometry entities from the following problem.",
     "Return only one JSON object with keys exactly matching the schema.",
     "Use single uppercase letters for all point names.",
+    "Each circle should include an id (e.g. C1, C2) when possible.",
+    "For tangent constraints, always provide circleId (or circleCenter) so the target circle is unambiguous.",
     "If unknown, return empty arrays.",
     "Schema keys:",
     "points, segments, circles, triangles, midpoints, pointsOnSegments, parallels, perpendiculars, altitudes, medians, angleBisectors, tangents, incircles, circumcircles, rectangles, squares, parallelograms, trapezoids, circlesByDiameter, pointsOnCircles, namedTangents, perpendicularThroughPointIntersections, tangentIntersections",

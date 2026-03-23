@@ -11,6 +11,7 @@ export interface Segment {
 }
 
 export interface Circle {
+  id?: string;
   center: string;
   radius: number;
 }
@@ -72,6 +73,7 @@ export interface AngleBisectorConstraint {
 
 export interface TangentConstraint {
   at: string;
+  circleId?: string;
   circleCenter?: string;
 }
 
@@ -102,16 +104,19 @@ export interface TrapezoidConstraint {
 export interface CircleByDiameterConstraint {
   a: string;
   b: string;
+  circleId?: string;
   centerId?: string;
 }
 
 export interface PointOnCircleConstraint {
   point: string;
+  circleId?: string;
   center: string;
 }
 
 export interface NamedTangentConstraint {
   at: string;
+  circleId?: string;
   center?: string;
   linePoint: string;
 }
@@ -125,6 +130,7 @@ export interface PerpendicularThroughPointIntersectionConstraint {
 
 export interface TangentIntersectionConstraint {
   at: string;
+  circleId?: string;
   center?: string;
   withLine: LineRef;
   intersection: string;

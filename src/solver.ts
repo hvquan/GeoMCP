@@ -61,8 +61,12 @@ export function refineLayoutWithSolver(
   };
 
   const circleMap = new Map<string, Circle>();
+  const circleCenterById = new Map<string, string>();
   for (const c of base.circles) {
     circleMap.set(c.center, { ...c });
+    if (c.id) {
+      circleCenterById.set(c.id, c.center);
+    }
   }
 
   const diameterPoints = new Set<string>();
@@ -79,7 +83,10 @@ export function refineLayoutWithSolver(
       const cx = (a.x + b.x) / 2;
       const cy = (a.y + b.y) / 2;
       setPoint(centerId, cx, cy);
-      circleMap.set(centerId, { center: centerId, radius: dist(a, b) / 2 });
+      circleMap.set(centerId, { id: dc.circleId, center: centerId, radius: dist(a, b) / 2 });
+      if (dc.circleId) {
+        circleCenterById.set(dc.circleId, centerId);
+      }
     }
 
     for (const mp of model.midpoints) {
@@ -111,9 +118,10 @@ export function refineLayoutWithSolver(
     }
 
     for (const pc of model.pointsOnCircles) {
-      const center = getPoint(pc.center);
+      const centerKey = (pc.circleId && circleCenterById.get(pc.circleId)) || pc.center;
+      const center = getPoint(centerKey);
       const p = getPoint(pc.point);
-      const circle = circleMap.get(pc.center);
+      const circle = circleMap.get(centerKey);
       if (!circle) {
         continue;
       }
@@ -186,7 +194,7 @@ export function refineLayoutWithSolver(
 
     for (const nt of model.namedTangents) {
       const at = getPoint(nt.at);
-      const centerId = nt.center ?? model.circlesByDiameter[0]?.centerId ?? "O";
+      const centerId = (nt.circleId && circleCenterById.get(nt.circleId)) ?? nt.center ?? model.circlesByDiameter[0]?.centerId ?? "O";
       const center = getPoint(centerId);
       const vx = at.x - center.x;
       const vy = at.y - center.y;
@@ -214,7 +222,7 @@ export function refineLayoutWithSolver(
 
     for (const c of model.tangentIntersections) {
       const at = getPoint(c.at);
-      const centerId = c.center ?? model.circlesByDiameter[0]?.centerId ?? "O";
+      const centerId = (c.circleId && circleCenterById.get(c.circleId)) ?? c.center ?? model.circlesByDiameter[0]?.centerId ?? "O";
       const center = getPoint(centerId);
       const withA = getPoint(c.withLine.a);
       const withB = getPoint(c.withLine.b);
@@ -235,13 +243,17 @@ export function refineLayoutWithSolver(
       const cx = (a.x + b.x) / 2;
       const cy = (a.y + b.y) / 2;
       setPoint(centerId, cx, cy);
-      circleMap.set(centerId, { center: centerId, radius: dist(a, b) / 2 });
+      circleMap.set(centerId, { id: dc.circleId, center: centerId, radius: dist(a, b) / 2 });
+      if (dc.circleId) {
+        circleCenterById.set(dc.circleId, centerId);
+      }
     }
 
     for (const pc of model.pointsOnCircles) {
-      const center = getPoint(pc.center);
+      const centerKey = (pc.circleId && circleCenterById.get(pc.circleId)) || pc.center;
+      const center = getPoint(centerKey);
       const p = getPoint(pc.point);
-      const circle = circleMap.get(pc.center);
+      const circle = circleMap.get(centerKey);
       if (!circle) {
         continue;
       }

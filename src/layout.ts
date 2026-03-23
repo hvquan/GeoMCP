@@ -80,6 +80,24 @@ function lineIntersection(
   return { id: "", x: px, y: py };
 }
 
+function resolveCircleCenterId(
+  circleId: string | undefined,
+  centerHint: string | undefined,
+  circles: Circle[],
+  fallbackCenterId: string
+): string {
+  if (circleId) {
+    const byId = circles.find((c) => c.id === circleId)?.center;
+    if (byId) {
+      return byId;
+    }
+  }
+  if (centerHint) {
+    return centerHint;
+  }
+  return fallbackCenterId;
+}
+
 function placeTriangle(
   triangle: Triangle,
   model: GeometryModel,
@@ -430,11 +448,17 @@ function applyParallelPerpendicular(
 function applyNamedTangents(
   model: GeometryModel,
   points: Map<string, Point>,
+  circles: Circle[],
   diagnostics: string[]
 ): void {
   for (const nt of model.namedTangents) {
     const at = getPoint(points, nt.at);
-    const centerId = nt.center ?? model.circlesByDiameter[0]?.centerId ?? "O";
+    const centerId = resolveCircleCenterId(
+      nt.circleId,
+      nt.center,
+      circles,
+      model.circlesByDiameter[0]?.centerId ?? "O"
+    );
     const center = getPoint(points, centerId);
     if (!at || !center) {
       diagnostics.push(`Chua du diem de dung tiep tuyen dat ten qua ${nt.at}.`);
@@ -486,13 +510,20 @@ function applyPerpendicularThroughPointIntersections(
 function applyTangentIntersections(
   model: GeometryModel,
   points: Map<string, Point>,
+  circles: Circle[],
   diagnostics: string[]
 ): void {
   for (const c of model.tangentIntersections) {
     ensureLinePoint(c.withLine, points);
 
     const at = getPoint(points, c.at);
-    const center = getPoint(points, "O") ?? getPoint(points, model.circlesByDiameter[0]?.centerId ?? "");
+    const centerId = resolveCircleCenterId(
+      c.circleId,
+      c.center,
+      circles,
+      model.circlesByDiameter[0]?.centerId ?? "O"
+    );
+    const center = getPoint(points, centerId);
     const withA = getPoint(points, c.withLine.a);
     const withB = getPoint(points, c.withLine.b);
     if (!at || !center || !withA || !withB) {
@@ -678,7 +709,7 @@ function applySpecialCircles(
         const radius = 6; // default radius
       setPoint(points, dc.a, center.x - radius, center.y);
       setPoint(points, dc.b, center.x + radius, center.y);
-      circles.push({ center: centerId, radius });
+      circles.push({ id: dc.circleId, center: centerId, radius });
     } else {
       // Place endpoints, then compute center
       if (!aExists) {
@@ -694,7 +725,7 @@ function applySpecialCircles(
       const cx = (a.x + b.x) / 2;
       const cy = (a.y + b.y) / 2;
       setPoint(points, centerId, cx, cy);
-      circles.push({ center: centerId, radius: dist(a, b) / 2 });
+      circles.push({ id: dc.circleId, center: centerId, radius: dist(a, b) / 2 });
     }
   }
 
@@ -765,13 +796,19 @@ function applySpecialCircles(
 function applyTangents(
   model: GeometryModel,
   points: Map<string, Point>,
+  circles: Circle[],
   segments: Segment[],
   diagnostics: string[]
 ): void {
   let tangentIndex = 1;
   for (const tg of model.tangents) {
     const p = getPoint(points, tg.at);
-    const centerId = tg.circleCenter ?? model.circles[0]?.center ?? "I";
+    const centerId = resolveCircleCenterId(
+      tg.circleId,
+      tg.circleCenter,
+      circles,
+      model.circles[0]?.center ?? "I"
+    );
     const center = getPoint(points, centerId);
     if (!p || !center) {
       diagnostics.push(`Chua du diem de dung tiep tuyen tai ${tg.at}.`);
@@ -815,9 +852,9 @@ export function buildLayout(model: GeometryModel): LayoutModel {
 
   applySpecialCircles(model, points, circles, diagnostics);
   applyPointsOnCircles(model, points, circles, diagnostics);
-  applyNamedTangents(model, points, diagnostics);
+  applyNamedTangents(model, points, circles, diagnostics);
   applyPerpendicularThroughPointIntersections(model, points, diagnostics);
-  applyTangentIntersections(model, points, diagnostics);
+  applyTangentIntersections(model, points, circles, diagnostics);
   extendTangentIntersectionRays(model, points);
   applyParallelPerpendicular(model, points, diagnostics);
   applyPointOnSegment(model, points, diagnostics);
@@ -918,7 +955,7 @@ export function buildLayout(model: GeometryModel): LayoutModel {
     addSegmentUnique(segments, { a: c.withLine.b, b: c.intersection });
   }
 
-  applyTangents(model, points, segments, diagnostics);
+  applyTangents(model, points, circles, segments, diagnostics);
 
   return {
     points: [...points.values()],
