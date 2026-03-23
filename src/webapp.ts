@@ -37,8 +37,13 @@ type SolveResult = {
     parallels: GeometryModel["parallels"];
     circlesByDiameter: GeometryModel["circlesByDiameter"];
     pointsOnCircles: GeometryModel["pointsOnCircles"];
+    circleConstraints: GeometryModel["circleConstraints"];
+    diameterConstraints: GeometryModel["diameterConstraints"];
     perpendiculars: GeometryModel["perpendiculars"];
     namedTangents: GeometryModel["namedTangents"];
+    lines: GeometryModel["lines"];
+    lineIntersections: GeometryModel["lineIntersections"];
+    perpendicularLines: GeometryModel["perpendicularLines"];
     perpendicularThroughPointIntersections: GeometryModel["perpendicularThroughPointIntersections"];
     tangents: GeometryModel["tangents"];
     tangentIntersections: GeometryModel["tangentIntersections"];
@@ -442,7 +447,8 @@ function buildCircleEntities(model: GeometryModel, layout: LayoutModel): {
   for (const c of layout.circles) centers.add(c.center);
   for (const c of model.circlesByDiameter) centers.add(c.centerId ?? "O");
   for (const p of model.pointsOnCircles) centers.add(p.center);
-  for (const t of model.tangents) if (t.circleCenter) centers.add(t.circleCenter);
+  for (const cc of model.circleConstraints) centers.add(cc.centerPointId);
+  for (const dc of model.diameterConstraints) centers.add(dc.circleId.replace(/^c_/, ""));
   for (const n of model.namedTangents) if (n.center) centers.add(n.center);
   for (const t of model.tangentIntersections) if (t.center) centers.add(t.center);
 
@@ -654,8 +660,13 @@ async function solveGeometry(
       parallels: enriched.parallels,
       circlesByDiameter: enriched.circlesByDiameter,
       pointsOnCircles: enriched.pointsOnCircles,
+      circleConstraints: enriched.circleConstraints,
+      diameterConstraints: enriched.diameterConstraints,
       perpendiculars: enriched.perpendiculars,
       namedTangents: enriched.namedTangents,
+      lines: enriched.lines,
+      lineIntersections: enriched.lineIntersections,
+      perpendicularLines: enriched.perpendicularLines,
       perpendicularThroughPointIntersections: enriched.perpendicularThroughPointIntersections,
       tangents: enriched.tangents,
       tangentIntersections: enriched.tangentIntersections,

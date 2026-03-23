@@ -21,7 +21,12 @@ import {
   TangentIntersectionConstraint,
   TangentConstraint,
   TrapezoidConstraint,
-  Triangle
+  Triangle,
+  Line,
+  LineIntersectionConstraint,
+  PerpendicularLinesConstraint,
+  CircleConstraint,
+  DiameterConstraint
 } from "./types.js";
 
 const pointRegex = /\b([A-Z])\b/g;
@@ -163,7 +168,12 @@ export function parseGeometryProblem(text: string): GeometryModel {
   const trapezoids: TrapezoidConstraint[] = [];
   const circlesByDiameter: CircleByDiameterConstraint[] = [];
   const pointsOnCircles: PointOnCircleConstraint[] = [];
+  const circleConstraints: CircleConstraint[] = [];
+  const diameterConstraints: DiameterConstraint[] = [];
   const namedTangents: NamedTangentConstraint[] = [];
+  const lines: Line[] = [];
+  const lineIntersections: LineIntersectionConstraint[] = [];
+  const perpendicularLines: PerpendicularLinesConstraint[] = [];
   const perpendicularThroughPointIntersections: PerpendicularThroughPointIntersectionConstraint[] = [];
   const tangentIntersections: TangentIntersectionConstraint[] = [];
 
@@ -369,7 +379,8 @@ export function parseGeometryProblem(text: string): GeometryModel {
         continue;
       }
       points.push(at, circleCenter);
-      tangents.push({ at, circleCenter });
+      const circleId = `c_${circleCenter}`;
+      tangents.push({ circleId, pointId: at, pointOnCircle: true });
       perpendiculars.push({ line1: { a: at, b: circleCenter }, line2: { a: at, b: `t_${at}` } });
     }
   }
@@ -507,6 +518,47 @@ export function parseGeometryProblem(text: string): GeometryModel {
       }
 
       points.push(through, toA, toB, withA, withB, intersection);
+      
+      // Generate line ids and create line objects
+      const lineToId = `l${lines.length + 1}`;
+      const lineWithId = `l${lines.length + 2}`;
+      
+      // Line through toA-toB (e.g., CE)
+      lines.push({
+        id: lineToId,
+        a: toA,
+        b: toB
+      });
+      
+      // Line through withA-withB (e.g., tangent Cx)
+      lines.push({
+        id: lineWithId,
+        a: withA,
+        b: withB
+      });
+      
+      // Line through "through" perpendicular to the "to" line (e.g., line through O perpendicular to CE)
+      const perpLineId = `l${lines.length + 1}`;
+      lines.push({
+        id: perpLineId,
+        through,
+        perpendicularTo: { a: toA, b: toB }
+      });
+      
+      // Constraint: the perpendicular line intersects with line at intersection point
+      lineIntersections.push({
+        line1: perpLineId,
+        line2: lineWithId,
+        point: intersection
+      });
+      
+      // Constraint: perpendicular line is perpendicular to the "to" line
+      perpendicularLines.push({
+        line1: perpLineId,
+        line2: lineToId
+      });
+      
+      // Keep old constraint for backwards compatibility
       perpendicularThroughPointIntersections.push({
         through,
         toLine: { a: toA, b: toB },
@@ -569,6 +621,32 @@ export function parseGeometryProblem(text: string): GeometryModel {
     }
   }
 
+  // Generate circle and diameter constraints from circlesByDiameter and pointsOnCircles
+  for (const cbd of circlesByDiameter) {
+    if (cbd.centerId) {
+      const circleId = `c_${cbd.centerId}`;
+      diameterConstraints.push({
+        circleId,
+        point1Id: cbd.a,
+        point2Id: cbd.b
+      });
+      circleConstraints.push({
+        circleId,
+        centerPointId: cbd.centerId,
+        pointOnCircleId: cbd.a
+      });
+    }
+  }
+
+  for (const poc of pointsOnCircles) {
+    const circleId = `c_${poc.center}`;
+    circleConstraints.push({
+      circleId,
+      centerPointId: poc.center,
+      pointOnCircleId: poc.point
+    });
+  }
+
   return {
     rawText: text,
     points: uniq(points),
@@ -605,7 +683,7 @@ export function parseGeometryProblem(text: string): GeometryModel {
     ),
     tangents: uniqByKey(
       tangents,
-      (it) => `${it.at}:${it.circleCenter ?? ""}`
+      (it) => `${it.circleId}:${it.pointId}:${it.pointOnCircle ? "1" : "0"}`
     ),
     incircles: uniqByKey(
       incircles,
@@ -627,9 +705,29 @@ export function parseGeometryProblem(text: string): GeometryModel {
       pointsOnCircles,
       (it) => `${it.point}:${it.center}`
     ),
+    circleConstraints: uniqByKey(
+      circleConstraints,
+      (it) => `${it.circleId}:${it.centerPointId}:${it.pointOnCircleId}`
+    ),
+    diameterConstraints: uniqByKey(
+      diameterConstraints,
+      (it) => `${it.circleId}:${[it.point1Id, it.point2Id].sort().join(":")}`
+    ),
     namedTangents: uniqByKey(
       namedTangents,
       (it) => `${it.at}:${it.linePoint}:${it.center ?? ""}`
+    ),
+    lines: uniqByKey(
+      lines,
+      (it) => `${it.id}`
+    ),
+    lineIntersections: uniqByKey(
+      lineIntersections,
+      (it) => `${[it.line1, it.line2].sort().join(":")}:${it.point}`
+    ),
+    perpendicularLines: uniqByKey(
+      perpendicularLines,
+      (it) => `${[it.line1, it.line2].sort().join(":")}`
     ),
     perpendicularThroughPointIntersections: uniqByKey(
       perpendicularThroughPointIntersections,

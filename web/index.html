@@ -650,15 +650,50 @@
           setDependentPoint(q2, q1.x + perp.x * keepLen, q1.y + perp.y * keepLen);
         }
 
+        function enforceDiameter(dc) {
+          const a = getPoint(dc.a);
+          const b = getPoint(dc.b);
+          const centerId = dc.centerId || "O";
+          const center = getPoint(centerId);
+          if (!a || !b || !center) {
+            return;
+          }
+
+          const lockedCenter = lockPointId && sameId(lockPointId, center.id);
+          const lockedA = lockPointId && sameId(lockPointId, a.id);
+          const lockedB = lockPointId && sameId(lockPointId, b.id);
+
+          if (lockedCenter) {
+            const dx = center.x - center.prevX;
+            const dy = center.y - center.prevY;
+            if (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9) {
+              setDependentPoint(a, a.x + dx, a.y + dy);
+              setDependentPoint(b, b.x + dx, b.y + dy);
+            }
+          } else if (lockedA) {
+            setDependentPoint(b, 2 * center.x - a.x, 2 * center.y - a.y);
+          } else if (lockedB) {
+            setDependentPoint(a, 2 * center.x - b.x, 2 * center.y - b.y);
+          } else {
+            setDependentPoint(center, (a.x + b.x) / 2, (a.y + b.y) / 2);
+          }
+
+          const centerNow = getPoint(centerId);
+          const anchorNow = getPoint(dc.a) || getPoint(dc.b);
+          if (centerNow && anchorNow) {
+            setCircleFromCenterAndAnchor(centerNow, anchorNow);
+          }
+        }
+
         for (let layer = 0; layer < 12; layer += 1) {
           if (!frontier.size) {
             break;
           }
           nextFrontier = new Set();
           for (const dc of circlesByDiameter) {
+            const centerId = dc.centerId || "O";
             const a = getPoint(dc.a);
             const b = getPoint(dc.b);
-            const centerId = dc.centerId || "O";
             const center = getPoint(centerId);
             if (!a || !b || !center) {
               continue;
@@ -666,33 +701,7 @@
             if (!hasAnyChanged([dc.a, dc.b, centerId])) {
               continue;
             }
-
-            const lockedCenter = lockPointId && sameId(lockPointId, center.id);
-            const lockedA = lockPointId && sameId(lockPointId, a.id);
-            const lockedB = lockPointId && sameId(lockPointId, b.id);
-
-            if (lockedCenter) {
-              // User drags center: translate both diameter endpoints with the center shift.
-              const dx = center.x - center.prevX;
-              const dy = center.y - center.prevY;
-              if (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9) {
-                setDependentPoint(a, a.x + dx, a.y + dy);
-                setDependentPoint(b, b.x + dx, b.y + dy);
-              }
-            } else if (lockedA) {
-              setDependentPoint(b, 2 * center.x - a.x, 2 * center.y - a.y);
-            } else if (lockedB) {
-              setDependentPoint(a, 2 * center.x - b.x, 2 * center.y - b.y);
-            } else {
-              // When no endpoint is actively dragged, center follows midpoint of C and D.
-              setDependentPoint(center, (a.x + b.x) / 2, (a.y + b.y) / 2);
-            }
-
-            const centerNow = getPoint(centerId);
-            const anchorNow = getPoint(dc.a) || getPoint(dc.b);
-            if (centerNow && anchorNow) {
-              setCircleFromCenterAndAnchor(centerNow, anchorNow);
-            }
+            enforceDiameter(dc);
           }
 
           for (const rel of pointsOnCircles) {
@@ -841,7 +850,17 @@
             setDependentPoint(inter, hit.x, hit.y);
           }
 
+          // Strongly enforce diameter after all other layer updates.
+          for (const dc of circlesByDiameter) {
+            enforceDiameter(dc);
+          }
+
           frontier = nextFrontier;
+        }
+
+        // Final hard pass to guarantee diameter relations after all propagated updates.
+        for (const dc of circlesByDiameter) {
+          enforceDiameter(dc);
         }
 
         isApplyingConstraints = false;

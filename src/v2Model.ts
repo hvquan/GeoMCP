@@ -35,7 +35,13 @@ export function enrichModelForV2(model: GeometryModel): GeometryModel {
     trapezoids: [...model.trapezoids],
     circlesByDiameter: [...model.circlesByDiameter],
     pointsOnCircles: [...model.pointsOnCircles],
+    circleConstraints: [...model.circleConstraints],
+    diameterConstraints: [...model.diameterConstraints],
     namedTangents: [...model.namedTangents],
+    lines: [...model.lines],
+    lineIntersections: [...model.lineIntersections],
+    perpendicularLines: [...model.perpendicularLines],
+    perpendicularLinesConstraints: [...model.perpendicularLinesConstraints],
     perpendicularThroughPointIntersections: [...model.perpendicularThroughPointIntersections],
     tangentIntersections: [...model.tangentIntersections]
   };
@@ -55,7 +61,8 @@ export function enrichModelForV2(model: GeometryModel): GeometryModel {
 
   for (const nt of enriched.namedTangents) {
     if (nt.center) {
-      enriched.tangents.push({ at: nt.at, circleCenter: nt.center });
+      const circleId = `c_${nt.center}`;
+      enriched.tangents.push({ circleId, pointId: nt.at, pointOnCircle: true });
       enriched.perpendiculars.push({
         line1: { a: nt.at, b: nt.center },
         line2: { a: nt.at, b: nt.linePoint }
@@ -108,7 +115,7 @@ export function enrichModelForV2(model: GeometryModel): GeometryModel {
   );
   enriched.tangents = uniqBy(
     enriched.tangents,
-    (it) => `${it.at}:${it.circleCenter ?? ""}`
+    (it) => `${it.circleId}:${it.pointId}:${it.pointOnCircle ? "1" : "0"}`
   );
   enriched.pointsOnCircles = uniqBy(
     enriched.pointsOnCircles,

@@ -23,7 +23,12 @@ import type {
   PointOnCircleConstraint,
   NamedTangentConstraint,
   PerpendicularThroughPointIntersectionConstraint,
-  TangentIntersectionConstraint
+  TangentIntersectionConstraint,
+  Line,
+  LineIntersectionConstraint,
+  PerpendicularLinesConstraint,
+  CircleConstraint,
+  DiameterConstraint
 } from "./types.js";
 
 type LlmParseOptions = {
@@ -55,7 +60,7 @@ const geometryExtractSchema = z.object({
   altitudes: z.array(z.object({ from: pointSchema, foot: pointSchema, baseA: pointSchema, baseB: pointSchema })).default([]),
   medians: z.array(z.object({ from: pointSchema, foot: pointSchema, baseA: pointSchema, baseB: pointSchema })).default([]),
   angleBisectors: z.array(z.object({ from: pointSchema, foot: pointSchema, sideA: pointSchema, sideB: pointSchema })).default([]),
-  tangents: z.array(z.object({ at: pointSchema, circleId: circleIdSchema.optional(), circleCenter: pointSchema.optional() })).default([]),
+  tangents: z.array(z.object({ circleId: z.string(), pointId: pointSchema, pointOnCircle: z.boolean() })).default([]),
   incircles: z.array(z.object({ triangle: z.tuple([pointSchema, pointSchema, pointSchema]).optional() })).default([]),
   circumcircles: z.array(z.object({ triangle: z.tuple([pointSchema, pointSchema, pointSchema]).optional() })).default([]),
   rectangles: z.array(z.object({ vertices: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema]) })).default([]),
@@ -64,7 +69,25 @@ const geometryExtractSchema = z.object({
   trapezoids: z.array(z.object({ vertices: z.tuple([pointSchema, pointSchema, pointSchema, pointSchema]) })).default([]),
   circlesByDiameter: z.array(z.object({ a: pointSchema, b: pointSchema, circleId: circleIdSchema.optional(), centerId: pointSchema.optional() })).default([]),
   pointsOnCircles: z.array(z.object({ point: pointSchema, circleId: circleIdSchema.optional(), center: pointSchema.optional() })).default([]),
+  circleConstraints: z.array(z.object({ circleId: z.string(), centerPointId: pointSchema, pointOnCircleId: pointSchema })).default([]),
+  diameterConstraints: z.array(z.object({ circleId: z.string(), point1Id: pointSchema, point2Id: pointSchema })).default([]),
   namedTangents: z.array(z.object({ at: pointSchema, circleId: circleIdSchema.optional(), center: pointSchema.optional(), linePoint: pointSchema })).default([]),
+  lines: z.array(z.object({
+    id: z.string(),
+    a: pointSchema.optional(),
+    b: pointSchema.optional(),
+    perpendicularTo: lineRefSchema.optional(),
+    through: pointSchema.optional()
+  })).default([]),
+  lineIntersections: z.array(z.object({
+    line1: z.string(),
+    line2: z.string(),
+    point: pointSchema
+  })).default([]),
+  perpendicularLines: z.array(z.object({
+    line1: z.string(),
+    line2: z.string()
+  })).default([]),
   perpendicularThroughPointIntersections: z.array(z.object({
     through: pointSchema,
     toLine: lineRefSchema,
@@ -149,7 +172,12 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
     circleId: it.circleId,
     center: it.center ?? circles.find((c) => c.id === it.circleId)?.center ?? "O"
   }));
+  const circleConstraints: CircleConstraint[] = extract.circleConstraints;
+  const diameterConstraints: DiameterConstraint[] = extract.diameterConstraints;
   const namedTangents: NamedTangentConstraint[] = extract.namedTangents;
+  const lines: Line[] = extract.lines;
+  const lineIntersections: LineIntersectionConstraint[] = extract.lineIntersections;
+  const perpendicularLines: PerpendicularLinesConstraint[] = extract.perpendicularLines;
   const perpendicularThroughPointIntersections: PerpendicularThroughPointIntersectionConstraint[] = extract.perpendicularThroughPointIntersections;
   const tangentIntersections: TangentIntersectionConstraint[] = extract.tangentIntersections;
 
@@ -167,7 +195,6 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
 
   const circleCount = circleRefSet.size || circles.length || circlesByDiameter.length;
   const missingTangentCircleRef = [
-    ...tangents.filter((t) => !t.circleId && !t.circleCenter),
     ...namedTangents.filter((t) => !t.circleId && !t.center),
     ...tangentIntersections.filter((t) => !t.circleId && !t.center)
   ];
@@ -202,7 +229,7 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
       ...altitudes.flatMap((a) => [a.from, a.foot, a.baseA, a.baseB]),
       ...medians.flatMap((m) => [m.from, m.foot, m.baseA, m.baseB]),
       ...angleBisectors.flatMap((a) => [a.from, a.foot, a.sideA, a.sideB]),
-      ...tangents.flatMap((t) => [t.at, ...(t.circleCenter ? [t.circleCenter] : [])]),
+      ...tangents.flatMap((t) => [t.pointId]),
       ...incircles.flatMap((i) => i.triangle ?? []),
       ...circumcircles.flatMap((c) => c.triangle ?? []),
       ...rectangles.flatMap((r) => r.vertices),
@@ -211,7 +238,11 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
       ...trapezoids.flatMap((t) => t.vertices),
       ...circlesByDiameter.flatMap((c) => [c.a, c.b, ...(c.centerId ? [c.centerId] : [])]),
       ...pointsOnCircles.flatMap((p) => [p.point, p.center]),
+      ...circleConstraints.flatMap((c) => [c.centerPointId, c.pointOnCircleId]),
+      ...diameterConstraints.flatMap((d) => [d.point1Id, d.point2Id]),
       ...namedTangents.flatMap((n) => [n.at, n.linePoint, ...(n.center ? [n.center] : [])]),
+      ...lines.flatMap((l) => [...(l.a ? [l.a] : []), ...(l.b ? [l.b] : []), ...(l.through ? [l.through] : []), ...(l.perpendicularTo ? [l.perpendicularTo.a, l.perpendicularTo.b] : [])]),
+      ...lineIntersections.flatMap((li) => [li.point]),
       ...perpendicularThroughPointIntersections.flatMap((p) => [p.through, p.toLine.a, p.toLine.b, p.withLine.a, p.withLine.b, p.intersection]),
       ...tangentIntersections.flatMap((t) => [t.at, t.withLine.a, t.withLine.b, t.intersection, ...(t.center ? [t.center] : [])])
     ],
@@ -231,7 +262,7 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
     altitudes: uniqBy(altitudes, (a) => `${a.from}:${a.foot}:${[a.baseA, a.baseB].sort().join("")}`),
     medians: uniqBy(medians, (m) => `${m.from}:${m.foot}:${[m.baseA, m.baseB].sort().join("")}`),
     angleBisectors: uniqBy(angleBisectors, (a) => `${a.from}:${a.foot}:${a.sideA}:${a.sideB}`),
-    tangents: uniqBy(tangents, (t) => `${t.at}:${t.circleCenter ?? ""}`),
+    tangents: uniqBy(tangents, (t) => `${t.circleId}:${t.pointId}:${t.pointOnCircle ? "1" : "0"}`),
     incircles: uniqBy(incircles, (i) => `I:${i.triangle?.join("") ?? ""}`),
     circumcircles: uniqBy(circumcircles, (c) => `O:${c.triangle?.join("") ?? ""}`),
     rectangles: uniqBy(rectangles, (r) => r.vertices.join("")),
@@ -240,7 +271,12 @@ function buildModelFromExtract(rawText: string, extract: z.infer<typeof geometry
     trapezoids: uniqBy(trapezoids, (t) => t.vertices.join("")),
     circlesByDiameter: uniqBy(circlesByDiameter, (c) => `${[c.a, c.b].sort().join("")}:${c.circleId ?? ""}:${c.centerId ?? ""}`),
     pointsOnCircles: uniqBy(pointsOnCircles, (p) => `${p.point}:${p.circleId ?? ""}:${p.center}`),
+    circleConstraints: uniqBy(circleConstraints, (c) => `${c.circleId}:${c.centerPointId}:${c.pointOnCircleId}`),
+    diameterConstraints: uniqBy(diameterConstraints, (d) => `${d.circleId}:${[d.point1Id, d.point2Id].sort().join(":")}`),
     namedTangents: uniqBy(namedTangents, (n) => `${n.at}:${n.linePoint}:${n.center ?? ""}`),
+    lines: uniqBy(lines, (l) => `${l.id}`),
+    lineIntersections: uniqBy(lineIntersections, (li) => `${[li.line1, li.line2].sort().join(":")}:${li.point}`),
+    perpendicularLines: uniqBy(perpendicularLines, (pl) => `${[pl.line1, pl.line2].sort().join(":")}`),
     perpendicularThroughPointIntersections: uniqBy(perpendicularThroughPointIntersections, (p) => `${p.through}:${p.toLine.a}${p.toLine.b}:${p.withLine.a}${p.withLine.b}:${p.intersection}`),
     tangentIntersections: uniqBy(tangentIntersections, (t) => `${t.at}:${t.withLine.a}${t.withLine.b}:${t.intersection}:${t.center ?? ""}`)
   };

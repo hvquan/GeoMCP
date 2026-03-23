@@ -1,5 +1,6 @@
 export interface Point {
   id: string;
+  label?: string;  // Point name (e.g., 'A', 'B', 'O')
   x: number;
   y: number;
 }
@@ -72,9 +73,9 @@ export interface AngleBisectorConstraint {
 }
 
 export interface TangentConstraint {
-  at: string;
-  circleId?: string;
-  circleCenter?: string;
+  circleId: string;
+  pointId: string;
+  pointOnCircle: boolean;  // true: tiếp tuyến tại điểm trên đường tròn, false: tiếp tuyến qua điểm ngoài đường tròn
 }
 
 export interface IncircleConstraint {
@@ -128,6 +129,39 @@ export interface PerpendicularThroughPointIntersectionConstraint {
   intersection: string;
 }
 
+export interface Line {
+  id: string;
+  // Type 1: simple line through two points
+  point1Id?: string;
+  point2Id?: string;
+  // Type 2: perpendicular to another line, passing through a point
+  perpendicularToId?: string;
+  throughPointId?: string;
+}
+
+export interface LineIntersection {
+  line1Id: string;
+  line2Id: string;
+  pointId: string;
+}
+
+export interface PerpendicularLine {
+  id: string;
+  pointId: string;   // điểm đường đi qua
+  lineId: string;    // đường nó vuông góc với
+}
+
+export interface LineIntersectionConstraint {
+  line1: string;  // line id
+  line2: string;  // line id
+  point: string;  // intersection point id
+}
+
+export interface PerpendicularLinesConstraint {
+  line1: string;  // line id
+  line2: string;  // line id
+}
+
 export interface TangentIntersectionConstraint {
   at: string;
   circleId?: string;
@@ -136,12 +170,25 @@ export interface TangentIntersectionConstraint {
   intersection: string;
 }
 
+export interface CircleConstraint {
+  circleId: string;
+  centerPointId: string;
+  pointOnCircleId: string;
+}
+
+export interface DiameterConstraint {
+  circleId: string;
+  point1Id: string;
+  point2Id: string;
+}
+
 export interface GeometryModel {
   rawText: string;
   points: string[];
   segments: Segment[];
   circles: Circle[];
   triangles: Triangle[];
+  lines: Line[];  // NEW: explicit line objects
   midpoints: MidpointConstraint[];
   pointsOnSegments: PointOnSegmentConstraint[];
   parallels: ParallelConstraint[];
@@ -158,7 +205,12 @@ export interface GeometryModel {
   trapezoids: TrapezoidConstraint[];
   circlesByDiameter: CircleByDiameterConstraint[];
   pointsOnCircles: PointOnCircleConstraint[];
+  circleConstraints: CircleConstraint[];  // NEW: circle defined by center point and point on circle
+  diameterConstraints: DiameterConstraint[];  // NEW: diameter defined by two endpoints
   namedTangents: NamedTangentConstraint[];
+  lineIntersections: LineIntersection[];  // NEW: two lines intersect at point
+  perpendicularLines: PerpendicularLine[];  // NEW: perpendicular line through a point to a line
+  perpendicularLinesConstraints: PerpendicularLinesConstraint[];  // two lines are perpendicular (legacy)
   perpendicularThroughPointIntersections: PerpendicularThroughPointIntersectionConstraint[];
   tangentIntersections: TangentIntersectionConstraint[];
 }
