@@ -9,9 +9,34 @@ interface Viewport {
 
 function computeViewport(layout: LayoutModel): Viewport {
   // Ignore internal helper points when fitting viewport.
-  const viewportPoints = layout.points.filter((p) => !p.id.startsWith("_"));
-  const xs = viewportPoints.map((p) => p.x);
-  const ys = viewportPoints.map((p) => p.y);
+  const viewportPoints = layout.points.filter(
+    (p) => !p.id.startsWith("_") && Number.isFinite(p.x) && Number.isFinite(p.y)
+  );
+
+  let effectivePoints = viewportPoints;
+  if (layout.circles.length > 0) {
+    const circlesWithCenter = layout.circles
+      .map((c) => ({ c, center: layout.points.find((p) => p.id === c.center) }))
+      .filter((it): it is { c: LayoutModel["circles"][number]; center: LayoutModel["points"][number] } => Boolean(it.center));
+
+    if (circlesWithCenter.length > 0) {
+      const maxR = Math.max(...circlesWithCenter.map((it) => it.c.radius), 1);
+      const keepDist = Math.max(10, maxR * 8);
+      const nearCircle = viewportPoints.filter((p) =>
+        circlesWithCenter.some((it) => {
+          const dx = p.x - it.center.x;
+          const dy = p.y - it.center.y;
+          return Math.sqrt(dx * dx + dy * dy) <= keepDist;
+        })
+      );
+      if (nearCircle.length >= 2) {
+        effectivePoints = nearCircle;
+      }
+    }
+  }
+
+  const xs = effectivePoints.map((p) => p.x);
+  const ys = effectivePoints.map((p) => p.y);
 
   for (const c of layout.circles) {
     const center = layout.points.find((p) => p.id === c.center);

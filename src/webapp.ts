@@ -248,7 +248,7 @@ async function solveGeometry(
 ): Promise<SolveResult> {
   const message = (payload.message ?? "").trim();
   const imageDataUrl = (payload.imageDataUrl ?? "").trim();
-  const parserMode = payload.parserMode ?? "llm";
+  const parserMode = payload.parserMode ?? "heuristic";
   const solverIterations = Math.max(40, Math.min(1200, payload.solverIterations ?? 180));
 
   if (!message && !imageDataUrl) {
@@ -279,7 +279,11 @@ async function solveGeometry(
       parsed = await parseGeometryProblemWithLLM(recognizedText);
       parserVersion = "v2-llm";
     } catch (err) {
-      warnings.push(`LLM parser fallback to heuristic: ${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      const hint = /\b429\b|quota|RESOURCE_EXHAUSTED/i.test(message)
+        ? "LLM parser fallback to heuristic: LLM quota exceeded (429)."
+        : `LLM parser fallback to heuristic: ${message}`;
+      warnings.push(hint);
       parsed = parseGeometryProblem(recognizedText);
       parserVersion = "v2-fallback-v1";
     }
