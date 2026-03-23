@@ -109,13 +109,21 @@ Vi du trong cau hinh MCP client, tro den lenh start:
     - `problem` (string): de bai hinh hoc
     - `llmModel` (string, optional): model LLM
     - `fallbackToHeuristic` (boolean, optional, mac dinh `true`)
+    - `useConstraintSolver` (boolean, optional, mac dinh `true`)
+    - `solverIterations` (number, optional, mac dinh `160`)
   - Output:
-    - JSON gom `parserVersion`, `warnings`, `parsed`, `layout`, `svg`
+    - JSON gom `parserVersion`, `solver`, `warnings`, `parsed`, `layout`, `svg`
 
 ## Version 2 (LLM parser)
 
 Version cu van giu nguyen qua tool `read_and_draw_geometry`.
 Version 2 dung LLM qua tool `read_and_draw_geometry_v2_llm`.
+
+Version 2 da bo sung day du 3 huong:
+
+1. Dung LLM de trich xuat structure JSON schema
+2. Them bo giai rang buoc hinh hoc (constraint solver lap)
+3. Tu dong suy dien va xu ly them quan he: duong cao, trung tuyen, tiep tuyen, vuong goc, diem thuoc duong, diem thuoc duong tron
 
 Dat bien moi truong truoc khi chay server:
 

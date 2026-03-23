@@ -9,6 +9,8 @@ import { z } from "zod";
 import { parseGeometryProblem } from "./parser.js";
 import { parseGeometryProblemWithLLM } from "./llmParser.js";
 import { buildLayout } from "./layout.js";
+import { enrichModelForV2 } from "./v2Model.js";
+import { refineLayoutWithSolver } from "./solver.js";
 import { renderSvg } from "./svg.js";
 
 const TOOL_NAME = "read_and_draw_geometry";
@@ -46,6 +48,14 @@ const inputSchemaV2: Tool["inputSchema"] = {
     fallbackToHeuristic: {
       type: "boolean",
       description: "Neu LLM loi thi fallback ve parser cu"
+    },
+    useConstraintSolver: {
+      type: "boolean",
+      description: "Bat bo giai rang buoc tong quat cho version 2"
+    },
+    solverIterations: {
+      type: "number",
+      description: "So vong lap cho constraint solver"
     }
   },
   required: ["problem"]
@@ -65,7 +75,9 @@ const argsValidator = z.object({
 const argsValidatorV2 = z.object({
   problem: z.string().min(1),
   llmModel: z.string().min(1).optional(),
-  fallbackToHeuristic: z.boolean().optional().default(true)
+  fallbackToHeuristic: z.boolean().optional().default(true),
+  useConstraintSolver: z.boolean().optional().default(true),
+  solverIterations: z.number().int().positive().max(2000).optional().default(160)
 });
 
 const server = new Server(
@@ -107,7 +119,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       svg
     };
   } else {
-    const { problem, llmModel, fallbackToHeuristic } = argsValidatorV2.parse(
+    const {
+      problem,
+      llmModel,
+      fallbackToHeuristic,
+      useConstraintSolver,
+      solverIterations
+    } = argsValidatorV2.parse(
       request.params.arguments ?? {}
     );
 
@@ -128,12 +146,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ];
     }
 
-    const layout = buildLayout(parsed);
+    const enriched = enrichModelForV2(parsed);
+    const baseLayout = buildLayout(enriched);
+    const layout = useConstraintSolver
+      ? refineLayoutWithSolver(enriched, baseLayout, { iterations: solverIterations })
+      : baseLayout;
     const svg = renderSvg(layout);
     result = {
       parserVersion,
+      solver: useConstraintSolver
+        ? { enabled: true, iterations: solverIterations }
+        : { enabled: false },
       warnings,
-      parsed,
+      parsed: enriched,
       layout,
       svg
     };
