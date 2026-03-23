@@ -556,8 +556,63 @@
           return false;
         }
 
+        function hasRadiusDriverChanged(centerId) {
+          const cid = String(centerId || "").toUpperCase();
+          if (!cid) {
+            return false;
+          }
+          for (const dc of circlesByDiameter) {
+            const dcCenterId = String(dc.centerId || "O").toUpperCase();
+            if (dcCenterId !== cid) {
+              continue;
+            }
+            if (hasAnyChanged([dc.a, dc.b, dc.centerId || "O"])) {
+              return true;
+            }
+          }
+          return false;
+        }
+
         function resolveCenterId(rel) {
           return rel.center || rel.circleCenter || circlesByDiameter[0]?.centerId || "O";
+        }
+
+        function centerKey(centerId) {
+          return String(centerId || "").toUpperCase();
+        }
+
+        function circleRadiusByCenterId(centerId) {
+          const p = getPoint(centerId);
+          if (!p) {
+            return 0;
+          }
+          const cEl = circleByCenterId.get(p.id);
+          if (!cEl) {
+            return 0;
+          }
+          return parseNumber(cEl.getAttribute("r"), 0);
+        }
+
+        function radiusFromDiameterCenterId(centerId) {
+          const center = getPoint(centerId);
+          if (!center) {
+            return 0;
+          }
+          for (const dc of circlesByDiameter) {
+            const cid = dc.centerId || "O";
+            if (!sameId(cid, centerId)) {
+              continue;
+            }
+            const a = getPoint(dc.a);
+            const b = getPoint(dc.b);
+            if (a) {
+              return distance(center.x, center.y, a.x, a.y);
+            }
+            if (b) {
+              return distance(center.x, center.y, b.x, b.y);
+            }
+          }
+          return 0;
         }
 
         function sameId(a, b) {
@@ -685,11 +740,28 @@
           }
         }
 
+        const radiusByCenter = new Map();
+        for (const dc of circlesByDiameter) {
+          const cid = centerKey(dc.centerId || "O");
+          if (!cid || radiusByCenter.has(cid)) {
+            continue;
+          }
+          radiusByCenter.set(cid, circleRadiusByCenterId(dc.centerId || "O"));
+        }
+        for (const rel of pointsOnCircles) {
+          const cid = centerKey(rel.center);
+          if (!cid || radiusByCenter.has(cid)) {
+            continue;
+          }
+          radiusByCenter.set(cid, circleRadiusByCenterId(rel.center));
+        }
+
         for (let layer = 0; layer < 12; layer += 1) {
           if (!frontier.size) {
             break;
           }
           nextFrontier = new Set();
+          const radiusChangedCenters = new Set();
           for (const dc of circlesByDiameter) {
             const centerId = dc.centerId || "O";
             const a = getPoint(dc.a);
@@ -704,6 +776,14 @@
             enforceDiameter(dc);
           }
 
+          for (const [cid, oldRadius] of radiusByCenter.entries()) {
+            const newRadius = circleRadiusByCenterId(cid);
+            if (Math.abs(newRadius - oldRadius) > EPS) {
+              radiusChangedCenters.add(cid);
+              radiusByCenter.set(cid, newRadius);
+            }
+          }
+
           for (const rel of pointsOnCircles) {
             const p = getPoint(rel.point);
             const center = getPoint(rel.center);
@@ -711,10 +791,17 @@
             if (!p || !center || !cEl) {
               continue;
             }
-            if (!hasAnyChanged([rel.point, rel.center])) {
+            const relCenterKey = centerKey(rel.center);
+            if (
+              !hasAnyChanged([rel.point, rel.center]) &&
+              !hasRadiusDriverChanged(rel.center) &&
+              !radiusChangedCenters.has(relCenterKey)
+            ) {
               continue;
             }
-            const r = parseNumber(cEl.getAttribute("r"), 0);
+            // Explicit constraint: OE = OC = OD when O is center of a diameter-based circle.
+            const diameterRadius = radiusFromDiameterCenterId(rel.center);
+            const r = diameterRadius > 0 ? diameterRadius : parseNumber(cEl.getAttribute("r"), 0);
             const vx = p.x - center.x;
             const vy = p.y - center.y;
             const len = Math.sqrt(vx * vx + vy * vy) || 1;
