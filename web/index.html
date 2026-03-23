@@ -126,6 +126,16 @@
       overflow: auto;
     }
 
+    .svg-help {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #475569;
+    }
+
+    .dragging-point {
+      cursor: grabbing;
+    }
+
     .composer {
       border-top: 1px solid #e2e8f0;
       padding: 14px;
@@ -299,8 +309,253 @@
       wrap.innerHTML = payload.svg;
       div.appendChild(wrap);
 
+      const help = document.createElement("div");
+      help.className = "svg-help";
+      help.textContent = "Interactive viewer: keo diem de chinh hinh, cuon chuot de zoom, keo nen de pan.";
+      div.appendChild(help);
+
+      enhanceInteractiveSvg(wrap);
+
       messages.appendChild(div);
       messages.scrollTop = messages.scrollHeight;
+    }
+
+    function distance(x1, y1, x2, y2) {
+      const dx = x1 - x2;
+      const dy = y1 - y2;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function parseNumber(v, fallback = 0) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function findNearestPoint(points, x, y, threshold = 10) {
+      let best = null;
+      let bestD = Number.POSITIVE_INFINITY;
+      for (const p of points) {
+        const d = distance(p.x, p.y, x, y);
+        if (d < bestD) {
+          bestD = d;
+          best = p;
+        }
+      }
+      if (!best || bestD > threshold) {
+        return null;
+      }
+      return best;
+    }
+
+    function enhanceInteractiveSvg(container) {
+      const svg = container.querySelector("svg");
+      if (!svg) {
+        return;
+      }
+
+      svg.style.maxWidth = "100%";
+      svg.style.height = "auto";
+      svg.style.touchAction = "none";
+
+      const vb0 = (svg.getAttribute("viewBox") || "0 0 800 600").split(/\s+/).map(Number);
+      let viewBox = {
+        x: vb0[0] || 0,
+        y: vb0[1] || 0,
+        w: vb0[2] || 800,
+        h: vb0[3] || 600
+      };
+
+      function applyViewBox() {
+        svg.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+      }
+
+      const pointGroups = Array.from(svg.querySelectorAll("g")).filter((g) => {
+        const c = g.querySelector("circle");
+        const t = g.querySelector("text");
+        return Boolean(c && t && !g.closest("defs"));
+      });
+
+      const points = pointGroups
+        .map((g) => {
+          const circle = g.querySelector("circle");
+          const text = g.querySelector("text");
+          if (!circle || !text) {
+            return null;
+          }
+          const id = (text.textContent || "").trim();
+          if (!id || id.startsWith("_")) {
+            return null;
+          }
+          const x = parseNumber(circle.getAttribute("cx"));
+          const y = parseNumber(circle.getAttribute("cy"));
+          g.style.cursor = "grab";
+          return { id, group: g, circle, text, x, y, lines: [], centeredCircles: [], radiusCircles: [] };
+        })
+        .filter(Boolean);
+
+      const lines = Array.from(svg.querySelectorAll("line"));
+      for (const line of lines) {
+        const x1 = parseNumber(line.getAttribute("x1"));
+        const y1 = parseNumber(line.getAttribute("y1"));
+        const x2 = parseNumber(line.getAttribute("x2"));
+        const y2 = parseNumber(line.getAttribute("y2"));
+        const p1 = findNearestPoint(points, x1, y1, 8);
+        const p2 = findNearestPoint(points, x2, y2, 8);
+        if (p1) {
+          p1.lines.push({ line, end: 1 });
+        }
+        if (p2) {
+          p2.lines.push({ line, end: 2 });
+        }
+      }
+
+      const circleEls = Array.from(svg.querySelectorAll("circle")).filter((c) => {
+        const r = parseNumber(c.getAttribute("r"));
+        return r > 6; // geometry circles, not point dots
+      });
+
+      for (const c of circleEls) {
+        const cx = parseNumber(c.getAttribute("cx"));
+        const cy = parseNumber(c.getAttribute("cy"));
+        const r = parseNumber(c.getAttribute("r"));
+        const centerPoint = findNearestPoint(points, cx, cy, 8);
+        if (centerPoint) {
+          centerPoint.centeredCircles.push(c);
+        }
+
+        let bestAnchor = null;
+        let bestDelta = Number.POSITIVE_INFINITY;
+        for (const p of points) {
+          const d = distance(p.x, p.y, cx, cy);
+          const delta = Math.abs(d - r);
+          if (delta < bestDelta) {
+            bestDelta = delta;
+            bestAnchor = p;
+          }
+        }
+        if (bestAnchor && bestDelta < 10) {
+          bestAnchor.radiusCircles.push(c);
+        }
+      }
+
+      function screenToSvg(clientX, clientY) {
+        const pt = svg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        const ctm = svg.getScreenCTM();
+        if (!ctm) {
+          return { x: 0, y: 0 };
+        }
+        const out = pt.matrixTransform(ctm.inverse());
+        return { x: out.x, y: out.y };
+      }
+
+      let dragPoint = null;
+      let panStart = null;
+
+      function updatePoint(p, x, y) {
+        p.x = x;
+        p.y = y;
+        p.circle.setAttribute("cx", String(x));
+        p.circle.setAttribute("cy", String(y));
+        p.text.setAttribute("x", String(x + 8));
+        p.text.setAttribute("y", String(y - 8));
+
+        for (const item of p.lines) {
+          if (item.end === 1) {
+            item.line.setAttribute("x1", String(x));
+            item.line.setAttribute("y1", String(y));
+          } else {
+            item.line.setAttribute("x2", String(x));
+            item.line.setAttribute("y2", String(y));
+          }
+        }
+
+        for (const c of p.centeredCircles) {
+          c.setAttribute("cx", String(x));
+          c.setAttribute("cy", String(y));
+        }
+
+        for (const c of p.radiusCircles) {
+          const cx = parseNumber(c.getAttribute("cx"));
+          const cy = parseNumber(c.getAttribute("cy"));
+          c.setAttribute("r", String(distance(x, y, cx, cy)));
+        }
+      }
+
+      svg.addEventListener("pointerdown", (evt) => {
+        const targetGroup = evt.target.closest("g");
+        const p = points.find((it) => it.group === targetGroup);
+        if (p) {
+          evt.preventDefault();
+          dragPoint = p;
+          p.group.classList.add("dragging-point");
+          svg.setPointerCapture(evt.pointerId);
+          return;
+        }
+
+        panStart = {
+          pointerId: evt.pointerId,
+          clientX: evt.clientX,
+          clientY: evt.clientY,
+          viewX: viewBox.x,
+          viewY: viewBox.y
+        };
+        svg.setPointerCapture(evt.pointerId);
+      });
+
+      svg.addEventListener("pointermove", (evt) => {
+        if (dragPoint) {
+          evt.preventDefault();
+          const p = screenToSvg(evt.clientX, evt.clientY);
+          updatePoint(dragPoint, p.x, p.y);
+          return;
+        }
+
+        if (panStart && panStart.pointerId === evt.pointerId) {
+          evt.preventDefault();
+          const dx = (evt.clientX - panStart.clientX) * (viewBox.w / svg.clientWidth);
+          const dy = (evt.clientY - panStart.clientY) * (viewBox.h / svg.clientHeight);
+          viewBox.x = panStart.viewX - dx;
+          viewBox.y = panStart.viewY - dy;
+          applyViewBox();
+        }
+      });
+
+      svg.addEventListener("pointerup", (evt) => {
+        if (dragPoint) {
+          dragPoint.group.classList.remove("dragging-point");
+          dragPoint = null;
+        }
+        if (panStart && panStart.pointerId === evt.pointerId) {
+          panStart = null;
+        }
+      });
+
+      svg.addEventListener("pointercancel", () => {
+        if (dragPoint) {
+          dragPoint.group.classList.remove("dragging-point");
+          dragPoint = null;
+        }
+        panStart = null;
+      });
+
+      svg.addEventListener("wheel", (evt) => {
+        evt.preventDefault();
+        const zoom = evt.deltaY < 0 ? 0.9 : 1.1;
+        const p = screenToSvg(evt.clientX, evt.clientY);
+
+        const nw = viewBox.w * zoom;
+        const nh = viewBox.h * zoom;
+        const ratioX = (p.x - viewBox.x) / viewBox.w;
+        const ratioY = (p.y - viewBox.y) / viewBox.h;
+
+        viewBox.x = p.x - ratioX * nw;
+        viewBox.y = p.y - ratioY * nh;
+        viewBox.w = Math.max(80, Math.min(5000, nw));
+        viewBox.h = Math.max(60, Math.min(4000, nh));
+        applyViewBox();
+      }, { passive: false });
     }
 
     function renderTurn(turn) {
