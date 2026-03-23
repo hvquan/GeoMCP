@@ -65,6 +65,12 @@ export function refineLayoutWithSolver(
     circleMap.set(c.center, { ...c });
   }
 
+  const diameterPoints = new Set<string>();
+  for (const dc of model.circlesByDiameter) {
+    diameterPoints.add(dc.a);
+    diameterPoints.add(dc.b);
+  }
+
   for (let i = 0; i < iterations; i += 1) {
     for (const dc of model.circlesByDiameter) {
       const a = getPoint(dc.a);
@@ -118,6 +124,15 @@ export function refineLayoutWithSolver(
     }
 
     for (const rel of model.parallels) {
+      if (
+        diameterPoints.has(rel.line1.a) ||
+        diameterPoints.has(rel.line1.b) ||
+        diameterPoints.has(rel.line2.a) ||
+        diameterPoints.has(rel.line2.b)
+      ) {
+        continue;
+      }
+
       const a = getPoint(rel.line1.a);
       const b = getPoint(rel.line1.b);
       const c = getPoint(rel.line2.a);
@@ -130,6 +145,14 @@ export function refineLayoutWithSolver(
     }
 
     for (const rel of model.perpendiculars) {
+      const line2Protected = diameterPoints.has(rel.line2.a) || diameterPoints.has(rel.line2.b);
+      if (line2Protected) {
+        continue;
+      }
+      if (diameterPoints.has(rel.line1.a) || diameterPoints.has(rel.line1.b)) {
+        continue;
+      }
+
       const a = getPoint(rel.line1.a);
       const b = getPoint(rel.line1.b);
       const c = getPoint(rel.line2.a);
@@ -202,6 +225,30 @@ export function refineLayoutWithSolver(
       if (inter) {
         setPoint(c.intersection, inter.x, inter.y);
       }
+    }
+
+    // Re-sync circles after all point updates in this iteration.
+    for (const dc of model.circlesByDiameter) {
+      const a = getPoint(dc.a);
+      const b = getPoint(dc.b);
+      const centerId = dc.centerId ?? "O";
+      const cx = (a.x + b.x) / 2;
+      const cy = (a.y + b.y) / 2;
+      setPoint(centerId, cx, cy);
+      circleMap.set(centerId, { center: centerId, radius: dist(a, b) / 2 });
+    }
+
+    for (const pc of model.pointsOnCircles) {
+      const center = getPoint(pc.center);
+      const p = getPoint(pc.point);
+      const circle = circleMap.get(pc.center);
+      if (!circle) {
+        continue;
+      }
+      const vx = p.x - center.x;
+      const vy = p.y - center.y;
+      const len = Math.sqrt(vx * vx + vy * vy) || 1;
+      setPoint(pc.point, center.x + (vx / len) * circle.radius, center.y + (vy / len) * circle.radius);
     }
   }
 
