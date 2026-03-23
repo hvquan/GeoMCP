@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "web": "tsx src/webapp.ts",
+    "start:web": "node dist/webapp.js"
   },
   "keywords": [
     "mcp",

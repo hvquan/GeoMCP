@@ -54,6 +54,42 @@ open interactive-demo.html
 
 Trong demo nay, ban co the keo diem `E` tren duong tron va cac diem phu thuoc nhu `A`, `B`, `H` se cap nhat theo rang buoc cua bai toan.
 
+## Chat UI (text/anh -> ve hinh)
+
+Da co them giao dien web kieu chat de nguoi dung:
+
+- Nhap de bai bang text
+- Upload anh de OCR sang text
+- Dung LLM parse + constraint solver de ve SVG
+
+Chay UI local:
+
+```bash
+npm run web
+```
+
+Mo trinh duyet:
+
+```text
+http://localhost:4310
+```
+
+Neu chay ban build:
+
+```bash
+npm run build
+npm run start:web
+```
+
+Bien moi truong can thiet cho OCR/LLM parse:
+
+```bash
+export GEOMCP_OPENAI_API_KEY="<your_api_key>"
+export GEOMCP_OPENAI_MODEL="gpt-4.1-mini"
+# optional
+export GEOMCP_OPENAI_BASE_URL="https://api.openai.com/v1"
+```
+
 ## Dua len GitHub va cho moi nguoi su dung
 
 1. Tao repository moi tren GitHub (de o che do Public).

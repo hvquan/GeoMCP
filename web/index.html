@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoMCP Chat UI</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --bg2: #e8f2ff;
+      --panel: #fffdf7;
+      --ink: #1c2430;
+      --muted: #6b7280;
+      --accent: #c2410c;
+      --user: #0f766e;
+      --assistant: #1d4ed8;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "IBM Plex Serif", Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0%, #fff7ed 0, transparent 36%),
+        radial-gradient(circle at 100% 100%, #dbeafe 0, transparent 34%),
+        linear-gradient(120deg, var(--bg) 0%, var(--bg2) 100%);
+    }
+
+    .app {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      gap: 16px;
+    }
+
+    .sidebar {
+      background: rgba(255, 253, 247, 0.92);
+      border: 1px solid #e5dcc8;
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.08);
+    }
+
+    .brand {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .sub {
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .chip {
+      display: inline-block;
+      margin: 8px 8px 0 0;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #1e3a8a;
+      background: #dbeafe;
+    }
+
+    .main {
+      min-height: 78vh;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #d6deef;
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: 0 16px 38px rgba(0, 0, 0, 0.1);
+      display: grid;
+      grid-template-rows: 1fr auto;
+    }
+
+    .messages {
+      padding: 18px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .bubble {
+      max-width: 85%;
+      border-radius: 16px;
+      padding: 12px 14px;
+      line-height: 1.55;
+      animation: rise 220ms ease;
+      white-space: pre-wrap;
+    }
+
+    .user {
+      align-self: flex-end;
+      background: #d1fae5;
+      border: 1px solid #99f6e4;
+    }
+
+    .assistant {
+      align-self: flex-start;
+      background: #eef4ff;
+      border: 1px solid #c7d2fe;
+    }
+
+    .error {
+      align-self: flex-start;
+      background: #fee2e2;
+      border: 1px solid #fecaca;
+      color: var(--danger);
+    }
+
+    .svg-wrap {
+      margin-top: 10px;
+      background: #fff;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 8px;
+      overflow: auto;
+    }
+
+    .composer {
+      border-top: 1px solid #e2e8f0;
+      padding: 14px;
+      background: #fcfcff;
+    }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 84px;
+      resize: vertical;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      font-size: 15px;
+    }
+
+    .row {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .row input[type="file"] {
+      font-size: 13px;
+    }
+
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #fff;
+      background: linear-gradient(90deg, #ea580c, #0284c7);
+    }
+
+    .ghost {
+      background: #e2e8f0;
+      color: #1f2937;
+    }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .loader {
+      display: inline-block;
+      width: 22px;
+      height: 22px;
+      border: 3px solid #cbd5e1;
+      border-top-color: var(--assistant);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { order: 2; }
+      .main { min-height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1 class="brand">GeoMCP Chat</h1>
+      <p class="sub">
+        Nhap de toan hinh hoc hoac upload anh. He thong se OCR (neu co anh), phan tich de,
+        giai rang buoc va ve hinh SVG.
+      </p>
+      <span class="chip">Text to Diagram</span>
+      <span class="chip">Image to Text</span>
+      <span class="chip">Constraint Solver</span>
+      <p class="meta">Tip: Ban co the danh may de bai ro rang de giam sai OCR.</p>
+    </aside>
+
+    <section class="main">
+      <div id="messages" class="messages"></div>
+
+      <div class="composer">
+        <textarea id="prompt" placeholder="Nhap de bai hinh hoc..."></textarea>
+        <div class="row">
+          <input id="file" type="file" accept="image/*" />
+          <select id="mode">
+            <option value="llm">Parser mode: LLM + fallback</option>
+            <option value="heuristic">Parser mode: Heuristic only</option>
+          </select>
+          <button id="send">Gui</button>
+          <button id="clear" class="ghost">Xoa hoi thoai</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const messages = document.getElementById("messages");
+    const promptEl = document.getElementById("prompt");
+    const fileEl = document.getElementById("file");
+    const sendBtn = document.getElementById("send");
+    const clearBtn = document.getElementById("clear");
+    const modeEl = document.getElementById("mode");
+
+    function pushBubble(role, text) {
+      const div = document.createElement("div");
+      div.className = `bubble ${role}`;
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return div;
+    }
+
+    function pushAssistantWithSvg(payload) {
+      const div = document.createElement("div");
+      div.className = "bubble assistant";
+
+      const summary = document.createElement("div");
+      const lines = [
+        `Parser: ${payload.parserVersion}`,
+        `Diagnostics: ${(payload.diagnostics || []).length}`,
+        payload.recognizedText ? `Recognized text:\n${payload.recognizedText}` : ""
+      ].filter(Boolean).join("\n\n");
+      summary.textContent = lines;
+      div.appendChild(summary);
+
+      if (payload.warnings && payload.warnings.length) {
+        const warn = document.createElement("div");
+        warn.className = "meta";
+        warn.textContent = `Warnings: ${payload.warnings.join(" | ")}`;
+        div.appendChild(warn);
+      }
+
+      const wrap = document.createElement("div");
+      wrap.className = "svg-wrap";
+      wrap.innerHTML = payload.svg;
+      div.appendChild(wrap);
+
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("Cannot read image"));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function submit() {
+      const message = promptEl.value.trim();
+      const file = fileEl.files && fileEl.files[0];
+      if (!message && !file) {
+        pushBubble("error", "Hay nhap de bai hoac chon anh truoc khi gui.");
+        return;
+      }
+
+      let imageDataUrl = "";
+      if (file) {
+        imageDataUrl = await readFileAsDataUrl(file);
+      }
+
+      const userPreview = message || "[Da gui anh de OCR]";
+      pushBubble("user", userPreview);
+
+      const waiting = document.createElement("div");
+      waiting.className = "bubble assistant";
+      waiting.innerHTML = '<span class="loader"></span>Dang phan tich de va ve hinh...';
+      messages.appendChild(waiting);
+      messages.scrollTop = messages.scrollHeight;
+
+      try {
+        const resp = await fetch("/api/solve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message,
+            imageDataUrl,
+            parserMode: modeEl.value,
+            solverIterations: 180
+          })
+        });
+
+        const data = await resp.json();
+        waiting.remove();
+
+        if (!resp.ok || !data.ok) {
+          pushBubble("error", data.error || "Unknown error");
+          return;
+        }
+
+        pushAssistantWithSvg(data);
+      } catch (error) {
+        waiting.remove();
+        pushBubble("error", error.message || String(error));
+      }
+    }
+
+    sendBtn.addEventListener("click", submit);
+    promptEl.addEventListener("keydown", (evt) => {
+      if ((evt.metaKey || evt.ctrlKey) && evt.key === "Enter") {
+        submit();
+      }
+    });
+    clearBtn.addEventListener("click", () => {
+      messages.innerHTML = "";
+      promptEl.value = "";
+      fileEl.value = "";
+    });
+
+    pushBubble("assistant", "Chao ban. Hay gui de bai text hoac anh, toi se ve hinh SVG cho ban.");
+  </script>
+</body>
+</html>
