@@ -8,8 +8,10 @@ interface Viewport {
 }
 
 function computeViewport(layout: LayoutModel): Viewport {
-  const xs = layout.points.map((p) => p.x);
-  const ys = layout.points.map((p) => p.y);
+  // Ignore internal helper points when fitting viewport.
+  const viewportPoints = layout.points.filter((p) => !p.id.startsWith("_"));
+  const xs = viewportPoints.map((p) => p.x);
+  const ys = viewportPoints.map((p) => p.y);
 
   for (const c of layout.circles) {
     const center = layout.points.find((p) => p.id === c.center);

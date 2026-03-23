@@ -509,6 +509,23 @@ function applyTangentIntersections(
       continue;
     }
 
+    // Near-parallel lines can yield numerically huge intersections that collapse the whole SVG scale.
+    const di = dist(inter, at);
+    if (!Number.isFinite(di) || di > 60) {
+      const dx = tangentDir.x - at.x;
+      const dy = tangentDir.y - at.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const approx = {
+        x: at.x + (dx / len) * 10,
+        y: at.y + (dy / len) * 10
+      };
+      setPoint(points, c.intersection, approx.x, approx.y);
+      diagnostics.push(
+        `Giao diem ${c.intersection} duoc xap xi vi hai duong gan song song (tranh vo cuc so).`
+      );
+      continue;
+    }
+
     setPoint(points, c.intersection, inter.x, inter.y);
   }
 }
