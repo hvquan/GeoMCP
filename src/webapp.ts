@@ -8,12 +8,53 @@ import { buildLayout } from "./layout.js";
 import { enrichModelForV2 } from "./v2Model.js";
 import { refineLayoutWithSolver } from "./solver.js";
 import { renderSvg } from "./svg.js";
+import type { GeometryModel } from "./types.js";
 
 type SolveRequest = {
+  sessionId?: string;
   message?: string;
   imageDataUrl?: string;
   parserMode?: "heuristic" | "llm";
   solverIterations?: number;
+};
+
+type SolveResult = {
+  ok: true;
+  parserVersion: string;
+  recognizedText: string;
+  warnings: string[];
+  diagnostics: string[];
+  svg: string;
+  parsed: {
+    points: string[];
+    triangles: GeometryModel["triangles"];
+    circlesByDiameter: GeometryModel["circlesByDiameter"];
+    pointsOnCircles: GeometryModel["pointsOnCircles"];
+    perpendiculars: GeometryModel["perpendiculars"];
+    tangents: GeometryModel["tangents"];
+    tangentIntersections: GeometryModel["tangentIntersections"];
+  };
+};
+
+type StreamEvent =
+  | { type: "progress"; stage: string; message: string }
+  | { type: "result"; payload: SolveResult }
+  | { type: "error"; message: string };
+
+type SessionTurn = {
+  timestamp: string;
+  userText: string;
+  recognizedText: string;
+  parserVersion: string;
+  warnings: string[];
+  diagnostics: string[];
+  svg: string;
+};
+
+type SessionData = {
+  sessionId: string;
+  updatedAt: string;
+  turns: SessionTurn[];
 };
 
 type ChatMessage = {
@@ -24,6 +65,44 @@ type ChatMessage = {
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = join(__filename, "../../..");
 const webRoot = join(projectRoot, "web");
+const sessions = new Map<string, SessionData>();
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function normalizeSessionId(value: string | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) {
+    return "default";
+  }
+  return raw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "default";
+}
+
+function getSession(sessionId: string): SessionData {
+  const id = normalizeSessionId(sessionId);
+  const existing = sessions.get(id);
+  if (existing) {
+    return existing;
+  }
+
+  const created: SessionData = {
+    sessionId: id,
+    updatedAt: nowIso(),
+    turns: []
+  };
+  sessions.set(id, created);
+  return created;
+}
+
+function appendSessionTurn(sessionId: string, turn: SessionTurn): void {
+  const session = getSession(sessionId);
+  session.turns.push(turn);
+  if (session.turns.length > 30) {
+    session.turns = session.turns.slice(-30);
+  }
+  session.updatedAt = nowIso();
+}
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
   const body = JSON.stringify(payload);
@@ -32,6 +111,40 @@ function json(res: ServerResponse, status: number, payload: unknown): void {
     "Content-Length": Buffer.byteLength(body)
   });
   res.end(body);
+}
+
+function allowedOrigins(): string[] {
+  const raw = (process.env.GEOMCP_ALLOWED_ORIGINS ?? "*").trim();
+  if (!raw) {
+    return ["*"];
+  }
+  return raw.split(",").map((it) => it.trim()).filter(Boolean);
+}
+
+function corsHeaders(originHeader: string | undefined): Record<string, string> {
+  const allow = allowedOrigins();
+  const origin = (originHeader ?? "").trim();
+  const wildcard = allow.includes("*");
+  const isAllowed = wildcard || (origin && allow.includes(origin));
+
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400"
+  };
+
+  if (wildcard) {
+    headers["Access-Control-Allow-Origin"] = "*";
+  } else if (isAllowed && origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Vary"] = "Origin";
+  }
+
+  return headers;
+}
+
+function writeStreamEvent(res: ServerResponse, event: StreamEvent): void {
+  res.write(`${JSON.stringify(event)}\n`);
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -129,32 +242,24 @@ async function extractTextFromImage(imageDataUrl: string): Promise<string> {
   return text.trim();
 }
 
-function pickMime(filePath: string): string {
-  const ext = extname(filePath).toLowerCase();
-  if (ext === ".html") return "text/html; charset=utf-8";
-  if (ext === ".css") return "text/css; charset=utf-8";
-  if (ext === ".js") return "application/javascript; charset=utf-8";
-  if (ext === ".json") return "application/json; charset=utf-8";
-  if (ext === ".svg") return "image/svg+xml";
-  return "text/plain; charset=utf-8";
-}
-
-async function handleSolve(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const payload = (await readJsonBody(req)) as SolveRequest;
+async function solveGeometry(
+  payload: SolveRequest,
+  onProgress?: (stage: string, message: string) => void
+): Promise<SolveResult> {
   const message = (payload.message ?? "").trim();
   const imageDataUrl = (payload.imageDataUrl ?? "").trim();
   const parserMode = payload.parserMode ?? "llm";
   const solverIterations = Math.max(40, Math.min(1200, payload.solverIterations ?? 180));
 
   if (!message && !imageDataUrl) {
-    json(res, 400, { error: "Please provide text or an image." });
-    return;
+    throw new Error("Please provide text or an image.");
   }
 
   const warnings: string[] = [];
   let recognizedText = message;
 
   if (!recognizedText && imageDataUrl) {
+    onProgress?.("ocr", "Extracting text from image...");
     recognizedText = await extractTextFromImage(imageDataUrl);
     if (!recognizedText) {
       throw new Error("Could not extract readable text from the image.");
@@ -168,6 +273,7 @@ async function handleSolve(req: IncomingMessage, res: ServerResponse): Promise<v
   let parsed;
   let parserVersion = "v1-heuristic";
 
+  onProgress?.("parse", parserMode === "llm" ? "Parsing geometry with LLM..." : "Parsing geometry with heuristic parser...");
   if (parserMode === "llm") {
     try {
       parsed = await parseGeometryProblemWithLLM(recognizedText);
@@ -181,12 +287,15 @@ async function handleSolve(req: IncomingMessage, res: ServerResponse): Promise<v
     parsed = parseGeometryProblem(recognizedText);
   }
 
+  onProgress?.("solve", "Applying relation enrichment and constraint solver...");
   const enriched = enrichModelForV2(parsed);
   const baseLayout = buildLayout(enriched);
   const layout = refineLayoutWithSolver(enriched, baseLayout, { iterations: solverIterations });
+
+  onProgress?.("render", "Rendering SVG diagram...");
   const svg = renderSvg(layout);
 
-  json(res, 200, {
+  return {
     ok: true,
     parserVersion,
     recognizedText,
@@ -202,11 +311,105 @@ async function handleSolve(req: IncomingMessage, res: ServerResponse): Promise<v
       tangents: enriched.tangents,
       tangentIntersections: enriched.tangentIntersections
     }
+  };
+}
+
+function pickMime(filePath: string): string {
+  const ext = extname(filePath).toLowerCase();
+  if (ext === ".html") return "text/html; charset=utf-8";
+  if (ext === ".css") return "text/css; charset=utf-8";
+  if (ext === ".js") return "application/javascript; charset=utf-8";
+  if (ext === ".json") return "application/json; charset=utf-8";
+  if (ext === ".svg") return "image/svg+xml";
+  return "text/plain; charset=utf-8";
+}
+
+async function handleSolve(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const payload = (await readJsonBody(req)) as SolveRequest;
+  const sessionId = normalizeSessionId(payload.sessionId);
+  const userText = (payload.message ?? "").trim() || "[image upload]";
+  const result = await solveGeometry(payload);
+
+  appendSessionTurn(sessionId, {
+    timestamp: nowIso(),
+    userText,
+    recognizedText: result.recognizedText,
+    parserVersion: result.parserVersion,
+    warnings: result.warnings,
+    diagnostics: result.diagnostics,
+    svg: result.svg
   });
+
+  json(res, 200, result);
+}
+
+async function handleSolveStream(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const payload = (await readJsonBody(req)) as SolveRequest;
+  const sessionId = normalizeSessionId(payload.sessionId);
+  const userText = (payload.message ?? "").trim() || "[image upload]";
+
+  res.writeHead(200, {
+    "Content-Type": "application/x-ndjson; charset=utf-8",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive"
+  });
+
+  try {
+    writeStreamEvent(res, { type: "progress", stage: "start", message: "Request received." });
+    const result = await solveGeometry(payload, (stage, message) => {
+      writeStreamEvent(res, { type: "progress", stage, message });
+    });
+
+    appendSessionTurn(sessionId, {
+      timestamp: nowIso(),
+      userText,
+      recognizedText: result.recognizedText,
+      parserVersion: result.parserVersion,
+      warnings: result.warnings,
+      diagnostics: result.diagnostics,
+      svg: result.svg
+    });
+
+    writeStreamEvent(res, { type: "result", payload: result });
+  } catch (error) {
+    writeStreamEvent(res, {
+      type: "error",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  } finally {
+    res.end();
+  }
+}
+
+function handleSessionGet(url: URL, res: ServerResponse): void {
+  const sessionId = normalizeSessionId(url.searchParams.get("sessionId") ?? "default");
+  const session = getSession(sessionId);
+  json(res, 200, {
+    ok: true,
+    sessionId,
+    updatedAt: session.updatedAt,
+    turns: session.turns
+  });
+}
+
+async function handleSessionClear(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const payload = (await readJsonBody(req)) as { sessionId?: string };
+  const sessionId = normalizeSessionId(payload.sessionId);
+  sessions.set(sessionId, {
+    sessionId,
+    updatedAt: nowIso(),
+    turns: []
+  });
+  json(res, 200, { ok: true, sessionId });
 }
 
 async function serveStatic(res: ServerResponse, relPath: string): Promise<void> {
   const safePath = relPath === "/" ? "/index.html" : relPath;
+  if (safePath.includes("..")) {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Invalid path");
+    return;
+  }
   const filePath = join(webRoot, safePath);
   const content = await readFile(filePath);
   res.writeHead(200, { "Content-Type": pickMime(filePath) });
@@ -220,13 +423,42 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/api/solve") {
+    const cors = corsHeaders(req.headers.origin);
+    for (const [k, v] of Object.entries(cors)) {
+      res.setHeader(k, v);
+    }
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const url = new URL(req.url, "http://localhost");
+    const pathname = url.pathname;
+
+    if (req.method === "POST" && pathname === "/api/solve") {
       await handleSolve(req, res);
       return;
     }
 
+    if (req.method === "POST" && pathname === "/api/solve/stream") {
+      await handleSolveStream(req, res);
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/session") {
+      handleSessionGet(url, res);
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/session/clear") {
+      await handleSessionClear(req, res);
+      return;
+    }
+
     if (req.method === "GET") {
-      await serveStatic(res, req.url);
+      await serveStatic(res, pathname);
       return;
     }
 

@@ -176,6 +176,12 @@
       margin-top: 8px;
     }
 
+    .progress {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #334155;
+    }
+
     .loader {
       display: inline-block;
       width: 22px;
@@ -233,6 +239,7 @@
     </section>
   </div>
 
+  <script src="./config.js"></script>
   <script>
     const messages = document.getElementById("messages");
     const promptEl = document.getElementById("prompt");
@@ -240,6 +247,23 @@
     const sendBtn = document.getElementById("send");
     const clearBtn = document.getElementById("clear");
     const modeEl = document.getElementById("mode");
+    const SESSION_KEY = "geomcp_chat_session_id";
+    const apiBase = (window.GEOMCP_API_BASE || "").replace(/\/$/, "");
+
+    function apiUrl(path) {
+      return apiBase ? `${apiBase}${path}` : path;
+    }
+
+    function ensureSessionId() {
+      let id = localStorage.getItem(SESSION_KEY);
+      if (!id) {
+        id = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        localStorage.setItem(SESSION_KEY, id);
+      }
+      return id;
+    }
+
+    const sessionId = ensureSessionId();
 
     function pushBubble(role, text) {
       const div = document.createElement("div");
@@ -279,6 +303,105 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
+    function renderTurn(turn) {
+      pushBubble("user", turn.userText || "[empty]");
+      pushAssistantWithSvg({
+        parserVersion: turn.parserVersion,
+        diagnostics: turn.diagnostics,
+        recognizedText: turn.recognizedText,
+        warnings: turn.warnings,
+        svg: turn.svg
+      });
+    }
+
+    async function loadHistory() {
+      try {
+        const resp = await fetch(apiUrl(`/api/session?sessionId=${encodeURIComponent(sessionId)}`));
+        if (!resp.ok) {
+          return;
+        }
+        const data = await resp.json();
+        if (!data.ok || !Array.isArray(data.turns)) {
+          return;
+        }
+        if (data.turns.length === 0) {
+          pushBubble("assistant", "Chao ban. Hay gui de bai text hoac anh, toi se ve hinh SVG cho ban.");
+          return;
+        }
+        for (const turn of data.turns) {
+          renderTurn(turn);
+        }
+      } catch (_err) {
+        pushBubble("assistant", "Chao ban. Hay gui de bai text hoac anh, toi se ve hinh SVG cho ban.");
+      }
+    }
+
+    function createProgressBubble() {
+      const waiting = document.createElement("div");
+      waiting.className = "bubble assistant";
+      const title = document.createElement("div");
+      title.innerHTML = '<span class="loader"></span>Dang xu ly...';
+      waiting.appendChild(title);
+
+      const progress = document.createElement("div");
+      progress.className = "progress";
+      progress.textContent = "Khoi tao";
+      waiting.appendChild(progress);
+
+      messages.appendChild(waiting);
+      messages.scrollTop = messages.scrollHeight;
+      return { waiting, progress };
+    }
+
+    async function streamSolve(payload, onProgress) {
+      const resp = await fetch(apiUrl("/api/solve/stream"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!resp.ok || !resp.body) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || "Cannot start streaming");
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalPayload = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            continue;
+          }
+          const event = JSON.parse(trimmed);
+          if (event.type === "progress") {
+            onProgress(`${event.stage}: ${event.message}`);
+          } else if (event.type === "result") {
+            finalPayload = event.payload;
+          } else if (event.type === "error") {
+            throw new Error(event.message || "Unknown stream error");
+          }
+        }
+      }
+
+      if (!finalPayload) {
+        throw new Error("No result returned from stream");
+      }
+
+      return finalPayload;
+    }
+
     function readFileAsDataUrl(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -304,35 +427,24 @@
       const userPreview = message || "[Da gui anh de OCR]";
       pushBubble("user", userPreview);
 
-      const waiting = document.createElement("div");
-      waiting.className = "bubble assistant";
-      waiting.innerHTML = '<span class="loader"></span>Dang phan tich de va ve hinh...';
-      messages.appendChild(waiting);
-      messages.scrollTop = messages.scrollHeight;
+      const progressUI = createProgressBubble();
 
       try {
-        const resp = await fetch("/api/solve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message,
-            imageDataUrl,
-            parserMode: modeEl.value,
-            solverIterations: 180
-          })
+        const data = await streamSolve({
+          sessionId,
+          message,
+          imageDataUrl,
+          parserMode: modeEl.value,
+          solverIterations: 180
+        }, (msg) => {
+          progressUI.progress.textContent = msg;
         });
 
-        const data = await resp.json();
-        waiting.remove();
-
-        if (!resp.ok || !data.ok) {
-          pushBubble("error", data.error || "Unknown error");
-          return;
-        }
+        progressUI.waiting.remove();
 
         pushAssistantWithSvg(data);
       } catch (error) {
-        waiting.remove();
+        progressUI.waiting.remove();
         pushBubble("error", error.message || String(error));
       }
     }
@@ -344,12 +456,23 @@
       }
     });
     clearBtn.addEventListener("click", () => {
-      messages.innerHTML = "";
-      promptEl.value = "";
-      fileEl.value = "";
+      fetch(apiUrl("/api/session/clear"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId })
+      }).catch(() => undefined).finally(() => {
+        messages.innerHTML = "";
+        promptEl.value = "";
+        fileEl.value = "";
+        pushBubble("assistant", "Hoi thoai da duoc xoa. Hay gui de bai moi.");
+      });
     });
 
-    pushBubble("assistant", "Chao ban. Hay gui de bai text hoac anh, toi se ve hinh SVG cho ban.");
+    if (window.location.hostname.endsWith("github.io") && !apiBase) {
+      pushBubble("error", "Chua cau hinh GEOMCP_API_BASE trong web/config.js. Hay tro den backend cloud URL.");
+    }
+
+    loadHistory();
   </script>
 </body>
 </html>

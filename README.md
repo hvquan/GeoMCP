@@ -61,6 +61,8 @@ Da co them giao dien web kieu chat de nguoi dung:
 - Nhap de bai bang text
 - Upload anh de OCR sang text
 - Dung LLM parse + constraint solver de ve SVG
+- Theo doi tien trinh xu ly theo luong realtime (OCR -> parse -> solve -> render)
+- Luu lich su hoi thoai theo session de refresh trang van con
 
 Chay UI local:
 
@@ -89,6 +91,58 @@ export GEOMCP_OPENAI_MODEL="gpt-4.1-mini"
 # optional
 export GEOMCP_OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
+
+### Chay online 24/7 (may ban tat van dung)
+
+Can tach 2 phan:
+
+1. Frontend static tren GitHub Pages
+2. Backend API tren cloud (Render/Fly/Cloud Run)
+
+#### A. Deploy backend tren Render
+
+- Tao `Web Service` tu repo nay
+- Build command:
+
+```bash
+npm install && npm run build
+```
+
+- Start command:
+
+```bash
+npm run start:web
+```
+
+- Dat environment variables:
+  - `GEOMCP_OPENAI_API_KEY`
+  - `GEOMCP_OPENAI_MODEL` (vd: `gpt-4.1-mini` hoac model free)
+  - `GEOMCP_OPENAI_BASE_URL` (vd OpenRouter: `https://openrouter.ai/api/v1`)
+  - `GEOMCP_ALLOWED_ORIGINS` (vd: `https://quanho.github.io`)
+
+Sau khi deploy, ban co URL backend, vi du:
+
+```text
+https://geomcp-api.onrender.com
+```
+
+#### B. Cau hinh frontend cho GitHub Pages
+
+Sua file `web/config.js`:
+
+```js
+window.GEOMCP_API_BASE = "https://geomcp-api.onrender.com";
+```
+
+Commit + push len `main`, GitHub Pages se cap nhat.
+
+Khi do user mo:
+
+```text
+https://quanho.github.io/GeoMCP/
+```
+
+Frontend se goi API cloud, khong phu thuoc may local cua ban.
 
 ## Dua len GitHub va cho moi nguoi su dung
 
