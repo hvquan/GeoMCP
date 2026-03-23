@@ -241,6 +241,7 @@
           <select id="mode">
             <option value="heuristic" selected>Parser mode: Heuristic only</option>
             <option value="llm">Parser mode: LLM + fallback</option>
+            <option value="llm-strict">Parser mode: LLM strict (JSON -> draw)</option>
           </select>
           <button id="send">Gui</button>
           <button id="clear" class="ghost">Xoa hoi thoai</button>
@@ -308,6 +309,21 @@
       wrap.className = "svg-wrap";
       wrap.innerHTML = payload.svg;
       div.appendChild(wrap);
+
+      if (payload.parsed) {
+        const details = document.createElement("details");
+        const summaryEl = document.createElement("summary");
+        summaryEl.textContent = "Parsed JSON (elements + constraints)";
+        details.appendChild(summaryEl);
+
+        const pre = document.createElement("pre");
+        pre.style.whiteSpace = "pre-wrap";
+        pre.style.fontSize = "12px";
+        pre.style.marginTop = "8px";
+        pre.textContent = JSON.stringify(payload.parsed, null, 2);
+        details.appendChild(pre);
+        div.appendChild(details);
+      }
 
       const help = document.createElement("div");
       help.className = "svg-help";

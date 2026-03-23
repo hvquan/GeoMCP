@@ -14,7 +14,7 @@ type SolveRequest = {
   sessionId?: string;
   message?: string;
   imageDataUrl?: string;
-  parserMode?: "heuristic" | "llm";
+  parserMode?: "heuristic" | "llm" | "llm-strict";
   solverIterations?: number;
 };
 
@@ -428,12 +428,20 @@ async function solveGeometry(
   let parsed;
   let parserVersion = "v1-heuristic";
 
-  onProgress?.("parse", parserMode === "llm" ? "Parsing geometry with LLM..." : "Parsing geometry with heuristic parser...");
-  if (parserMode === "llm") {
+  onProgress?.(
+    "parse",
+    parserMode === "heuristic"
+      ? "Parsing geometry with heuristic parser..."
+      : "Parsing geometry with LLM JSON schema..."
+  );
+  if (parserMode === "llm" || parserMode === "llm-strict") {
     try {
       parsed = await parseGeometryProblemWithLLM(recognizedText);
-      parserVersion = "v2-llm";
+      parserVersion = parserMode === "llm-strict" ? "v2-llm-strict" : "v2-llm";
     } catch (err) {
+      if (parserMode === "llm-strict") {
+        throw err;
+      }
       const message = err instanceof Error ? err.message : String(err);
       const hint = /\b429\b|quota|RESOURCE_EXHAUSTED/i.test(message)
         ? "LLM parser fallback to heuristic: LLM quota exceeded (429)."
