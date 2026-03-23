@@ -183,6 +183,25 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const raw = Buffer.concat(chunks).toString("utf-8");
   return JSON.parse(raw);
 }
+function normalizeModelName(model: string): string {
+  const name = (model || "").trim();
+  if (!name) {
+    return "gpt-4.1-mini";
+  }
+
+  if (name === "gemini-1.5-flash") {
+    return "gemini-2.0-flash";
+  }
+
+  return name;
+}
+
+function nextFallbackModel(model: string): string | null {
+  if (model === "gemini-2.0-flash") {
+    return "gemini-2.5-flash";
+  }
+  return null;
+}
 
 function getOpenAIConfig(): { apiKey: string; model: string; baseUrl: string } {
   const apiKey = process.env.GEOMCP_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
@@ -190,7 +209,7 @@ function getOpenAIConfig(): { apiKey: string; model: string; baseUrl: string } {
     throw new Error("Missing API key. Set GEOMCP_OPENAI_API_KEY or OPENAI_API_KEY.");
   }
 
-  const model = process.env.GEOMCP_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+  const model = normalizeModelName(process.env.GEOMCP_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini");
   const baseUrl = (process.env.GEOMCP_OPENAI_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
   return { apiKey, model, baseUrl };
 }
@@ -445,32 +464,65 @@ function buildCircleEntities(model: GeometryModel, layout: LayoutModel): {
   return { circleEntities, circleIdByCenter };
 }
 
-async function callOpenAIChat(messages: ChatMessage[], model?: string): Promise<string> {
+async function callOpenAIChat(
+  messages: ChatMessage[],
+  model?: string
+): Promise<{ text: string; warning?: string }> {
   const cfg = getOpenAIConfig();
-  const response = await fetch(`${cfg.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${cfg.apiKey}`
-    },
-    body: JSON.stringify({
-      model: model ?? cfg.model,
-      temperature: 0,
-      messages
-    })
-  });
+  const postCompletion = async (modelName: string) => {
+    return fetch(`${cfg.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.apiKey}`
+      },
+      body: JSON.stringify({
+        model: modelName,
+        temperature: 0,
+        messages
+      })
+    });
+  };
+
+  const requestedRaw = (model ?? cfg.model).trim();
+  const requestedModel = normalizeModelName(requestedRaw);
+  let selectedModel = requestedModel;
+  let response = await postCompletion(selectedModel);
+  let fallbackFrom: string | null = null;
+  if (!response.ok && response.status === 404) {
+    const fallback = nextFallbackModel(selectedModel);
+    if (fallback) {
+      fallbackFrom = selectedModel;
+      selectedModel = fallback;
+      response = await postCompletion(selectedModel);
+    }
+  }
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`OpenAI API error ${response.status}: ${text}`);
+    throw new Error(`OpenAI API error ${response.status} (model=${selectedModel}): ${text}`);
   }
 
-  return parseCompletionText(await response.json());
+  const text = parseCompletionText(await response.json());
+  const warningParts: string[] = [];
+  if (requestedRaw && requestedRaw !== requestedModel) {
+    warningParts.push(`Model '${requestedRaw}' is deprecated; auto-switched to '${requestedModel}'.`);
+  }
+  if (fallbackFrom && fallbackFrom !== selectedModel) {
+    warningParts.push(`Model '${fallbackFrom}' not found; fallback to '${selectedModel}'.`);
+  }
+
+  return {
+    text,
+    warning: warningParts.length ? warningParts.join(" ") : undefined
+  };
 }
 
-async function extractTextFromImage(imageDataUrl: string): Promise<string> {
-  const visionModel = process.env.GEOMCP_VISION_MODEL ?? process.env.GEOMCP_OPENAI_MODEL ?? "gpt-4.1-mini";
-  const text = await callOpenAIChat(
+async function extractTextFromImage(imageDataUrl: string): Promise<{ text: string; warning?: string }> {
+  const visionModel = normalizeModelName(
+    process.env.GEOMCP_VISION_MODEL ?? process.env.GEOMCP_OPENAI_MODEL ?? "gpt-4.1-mini"
+  );
+  const result = await callOpenAIChat(
     [
       {
         role: "system",
@@ -488,7 +540,10 @@ async function extractTextFromImage(imageDataUrl: string): Promise<string> {
     visionModel
   );
 
-  return text.trim();
+  return {
+    text: result.text.trim(),
+    warning: result.warning
+  };
 }
 
 async function solveGeometry(
@@ -507,9 +562,21 @@ async function solveGeometry(
   const warnings: string[] = [];
   let recognizedText = message;
 
+  if (parserMode === "llm" || parserMode === "llm-strict") {
+    const parserModelRaw = (process.env.GEOMCP_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini").trim();
+    const parserModelNormalized = normalizeModelName(parserModelRaw);
+    if (parserModelRaw && parserModelRaw !== parserModelNormalized) {
+      warnings.push(`Model '${parserModelRaw}' is deprecated; auto-switched to '${parserModelNormalized}'.`);
+    }
+  }
+
   if (!recognizedText && imageDataUrl) {
     onProgress?.("ocr", "Extracting text from image...");
-    recognizedText = await extractTextFromImage(imageDataUrl);
+    const ocr = await extractTextFromImage(imageDataUrl);
+    recognizedText = ocr.text;
+    if (ocr.warning) {
+      warnings.push(ocr.warning);
+    }
     if (!recognizedText) {
       throw new Error("Could not extract readable text from the image.");
     }

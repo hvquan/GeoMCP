@@ -252,10 +252,31 @@ function getApiConfig(options: LlmParseOptions): { apiKey: string; model: string
     throw new Error("Missing API key. Set GEOMCP_OPENAI_API_KEY or OPENAI_API_KEY to use LLM parser.");
   }
 
-  const model = options.model ?? process.env.GEOMCP_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+  const model = normalizeModelName(options.model ?? process.env.GEOMCP_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini");
   const baseUrl = (process.env.GEOMCP_OPENAI_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
 
   return { apiKey, model, baseUrl };
+}
+
+function normalizeModelName(model: string): string {
+  const name = (model || "").trim();
+  if (!name) {
+    return "gpt-4.1-mini";
+  }
+
+  // Gemini 1.5 Flash is retired on some endpoints. Promote to a widely available successor.
+  if (name === "gemini-1.5-flash") {
+    return "gemini-2.0-flash";
+  }
+
+  return name;
+}
+
+function nextFallbackModel(model: string): string | null {
+  if (model === "gemini-2.0-flash") {
+    return "gemini-2.5-flash";
+  }
+  return null;
 }
 
 function buildPrompt(problem: string): string {
@@ -279,32 +300,46 @@ export async function parseGeometryProblemWithLLM(
 ): Promise<GeometryModel> {
   const { apiKey, model, baseUrl } = getApiConfig(options);
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
+  const messages = [
+    {
+      role: "system",
+      content:
+        "You are a strict geometry information extractor. Return only valid JSON. Do not include markdown code fences."
     },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a strict geometry information extractor. Return only valid JSON. Do not include markdown code fences."
-        },
-        {
-          role: "user",
-          content: buildPrompt(problem)
-        }
-      ]
-    })
-  });
+    {
+      role: "user",
+      content: buildPrompt(problem)
+    }
+  ];
+
+  const postCompletion = async (modelName: string) => {
+    return fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: modelName,
+        temperature: 0,
+        messages
+      })
+    });
+  };
+
+  let selectedModel = model;
+  let response = await postCompletion(selectedModel);
+  if (!response.ok && response.status === 404) {
+    const fallback = nextFallbackModel(selectedModel);
+    if (fallback) {
+      selectedModel = fallback;
+      response = await postCompletion(selectedModel);
+    }
+  }
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`LLM API error ${response.status}: ${errText}`);
+    throw new Error(`LLM API error ${response.status} (model=${selectedModel}): ${errText}`);
   }
 
   const payload = await response.json();
