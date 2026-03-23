@@ -457,6 +457,7 @@
 
       let dragPoint = null;
       let panStart = null;
+      let isApplyingConstraints = false;
 
       function setCircleFromCenterAndAnchor(centerPoint, anchorPoint) {
         const cEl = circleByCenterId.get(centerPoint.id);
@@ -469,6 +470,10 @@
       }
 
       function applyCircleConstraints() {
+        if (isApplyingConstraints) {
+          return;
+        }
+        isApplyingConstraints = true;
         const data = parsed || {};
         const circlesByDiameter = Array.isArray(data.circlesByDiameter) ? data.circlesByDiameter : [];
         const pointsOnCircles = Array.isArray(data.pointsOnCircles) ? data.pointsOnCircles : [];
@@ -484,7 +489,7 @@
 
           const cx = (a.x + b.x) / 2;
           const cy = (a.y + b.y) / 2;
-          updatePoint(center, cx, cy);
+          updatePoint(center, cx, cy, true);
           setCircleFromCenterAndAnchor(center, a);
         }
 
@@ -499,11 +504,13 @@
           const vx = p.x - center.x;
           const vy = p.y - center.y;
           const len = Math.sqrt(vx * vx + vy * vy) || 1;
-          updatePoint(p, center.x + (vx / len) * r, center.y + (vy / len) * r);
+          updatePoint(p, center.x + (vx / len) * r, center.y + (vy / len) * r, true);
         }
+
+        isApplyingConstraints = false;
       }
 
-      function updatePoint(p, x, y) {
+      function updatePoint(p, x, y, skipConstraints = false) {
         p.x = x;
         p.y = y;
         p.circle.setAttribute("cx", String(x));
@@ -532,7 +539,9 @@
           c.setAttribute("r", String(distance(x, y, cx, cy)));
         }
 
-        applyCircleConstraints();
+        if (!skipConstraints) {
+          applyCircleConstraints();
+        }
       }
 
       svg.addEventListener("pointerdown", (evt) => {
