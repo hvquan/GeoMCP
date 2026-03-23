@@ -118,7 +118,7 @@ npm run start:web
   - `GEOMCP_OPENAI_API_KEY`
   - `GEOMCP_OPENAI_MODEL` (vd: `gpt-4.1-mini` hoac model free)
   - `GEOMCP_OPENAI_BASE_URL` (vd OpenRouter: `https://openrouter.ai/api/v1`)
-  - `GEOMCP_ALLOWED_ORIGINS` (vd: `https://quanho.github.io`)
+  - `GEOMCP_ALLOWED_ORIGINS` (vd: `https://hvquan.github.io`)
 
 Sau khi deploy, ban co URL backend, vi du:
 
@@ -139,7 +139,7 @@ Commit + push len `main`, GitHub Pages se cap nhat.
 Khi do user mo:
 
 ```text
-https://quanho.github.io/GeoMCP/
+https://hvquan.github.io/GeoMCP/
 ```
 
 Frontend se goi API cloud, khong phu thuoc may local cua ban.
