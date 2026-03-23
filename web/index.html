@@ -314,7 +314,7 @@
       help.textContent = "Interactive viewer: keo diem de chinh hinh, cuon chuot de zoom, keo nen de pan.";
       div.appendChild(help);
 
-      enhanceInteractiveSvg(wrap);
+      enhanceInteractiveSvg(wrap, payload.parsed || null);
 
       messages.appendChild(div);
       messages.scrollTop = messages.scrollHeight;
@@ -347,7 +347,7 @@
       return best;
     }
 
-    function enhanceInteractiveSvg(container) {
+    function enhanceInteractiveSvg(container, parsed) {
       const svg = container.querySelector("svg");
       if (!svg) {
         return;
@@ -393,6 +393,8 @@
         })
         .filter(Boolean);
 
+      const pointById = new Map(points.map((p) => [p.id, p]));
+
       const lines = Array.from(svg.querySelectorAll("line"));
       for (const line of lines) {
         const x1 = parseNumber(line.getAttribute("x1"));
@@ -414,6 +416,8 @@
         return r > 6; // geometry circles, not point dots
       });
 
+      const circleByCenterId = new Map();
+
       for (const c of circleEls) {
         const cx = parseNumber(c.getAttribute("cx"));
         const cy = parseNumber(c.getAttribute("cy"));
@@ -421,6 +425,7 @@
         const centerPoint = findNearestPoint(points, cx, cy, 8);
         if (centerPoint) {
           centerPoint.centeredCircles.push(c);
+          circleByCenterId.set(centerPoint.id, c);
         }
 
         let bestAnchor = null;
@@ -453,6 +458,51 @@
       let dragPoint = null;
       let panStart = null;
 
+      function setCircleFromCenterAndAnchor(centerPoint, anchorPoint) {
+        const cEl = circleByCenterId.get(centerPoint.id);
+        if (!cEl) {
+          return;
+        }
+        cEl.setAttribute("cx", String(centerPoint.x));
+        cEl.setAttribute("cy", String(centerPoint.y));
+        cEl.setAttribute("r", String(distance(centerPoint.x, centerPoint.y, anchorPoint.x, anchorPoint.y)));
+      }
+
+      function applyCircleConstraints() {
+        const data = parsed || {};
+        const circlesByDiameter = Array.isArray(data.circlesByDiameter) ? data.circlesByDiameter : [];
+        const pointsOnCircles = Array.isArray(data.pointsOnCircles) ? data.pointsOnCircles : [];
+
+        for (const dc of circlesByDiameter) {
+          const a = pointById.get(dc.a);
+          const b = pointById.get(dc.b);
+          const centerId = dc.centerId || "O";
+          const center = pointById.get(centerId);
+          if (!a || !b || !center) {
+            continue;
+          }
+
+          const cx = (a.x + b.x) / 2;
+          const cy = (a.y + b.y) / 2;
+          updatePoint(center, cx, cy);
+          setCircleFromCenterAndAnchor(center, a);
+        }
+
+        for (const rel of pointsOnCircles) {
+          const p = pointById.get(rel.point);
+          const center = pointById.get(rel.center);
+          const cEl = circleByCenterId.get(rel.center);
+          if (!p || !center || !cEl) {
+            continue;
+          }
+          const r = parseNumber(cEl.getAttribute("r"), 0);
+          const vx = p.x - center.x;
+          const vy = p.y - center.y;
+          const len = Math.sqrt(vx * vx + vy * vy) || 1;
+          updatePoint(p, center.x + (vx / len) * r, center.y + (vy / len) * r);
+        }
+      }
+
       function updatePoint(p, x, y) {
         p.x = x;
         p.y = y;
@@ -481,6 +531,8 @@
           const cy = parseNumber(c.getAttribute("cy"));
           c.setAttribute("r", String(distance(x, y, cx, cy)));
         }
+
+        applyCircleConstraints();
       }
 
       svg.addEventListener("pointerdown", (evt) => {
@@ -556,6 +608,9 @@
         viewBox.h = Math.max(60, Math.min(4000, nh));
         applyViewBox();
       }, { passive: false });
+
+      // Snap initial geometry to key circle constraints to avoid visible drift.
+      applyCircleConstraints();
     }
 
     function renderTurn(turn) {
@@ -565,7 +620,8 @@
         diagnostics: turn.diagnostics,
         recognizedText: turn.recognizedText,
         warnings: turn.warnings,
-        svg: turn.svg
+        svg: turn.svg,
+        parsed: null
       });
     }
 
