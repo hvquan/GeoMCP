@@ -27,6 +27,7 @@ type SolveResult = {
   svg: string;
   parsed: {
     points: string[];
+    circles: GeometryModel["circles"];
     triangles: GeometryModel["triangles"];
     midpoints: GeometryModel["midpoints"];
     pointsOnSegments: GeometryModel["pointsOnSegments"];
@@ -41,6 +42,12 @@ type SolveResult = {
     perpendicularThroughPointIntersections: GeometryModel["perpendicularThroughPointIntersections"];
     tangents: GeometryModel["tangents"];
     tangentIntersections: GeometryModel["tangentIntersections"];
+    lineEntities: Array<{ id: string; a: string; b: string }>;
+    circleEntities: Array<{ id: string; center: string; radius?: number }>;
+    parallelsWithIds: Array<{ line1Id: string; line2Id: string }>;
+    perpendicularsWithIds: Array<{ line1Id: string; line2Id: string }>;
+    tangentIntersectionsWithIds: Array<{ at: string; circleId?: string; withLineId: string; intersection: string }>;
+    namedTangentsWithIds: Array<{ at: string; circleId?: string; linePoint: string }>;
   };
 };
 
@@ -231,6 +238,9 @@ function normalizedCrossAbs(a: { x: number; y: number }, b: { x: number; y: numb
 
 function scoreLayout(model: GeometryModel, layout: LayoutModel): number {
   const byId = new Map(layout.points.map((p) => [p.id, p]));
+  const circleCenterById = new Map(
+    layout.circles.filter((c) => c.id).map((c) => [c.id as string, c.center])
+  );
   let score = 0;
 
   for (const c of model.circlesByDiameter) {
@@ -250,8 +260,9 @@ function scoreLayout(model: GeometryModel, layout: LayoutModel): number {
 
   for (const rel of model.pointsOnCircles) {
     const p = byId.get(rel.point);
-    const o = byId.get(rel.center);
-    const circle = layout.circles.find((it) => it.center === rel.center);
+    const centerKey = (rel.circleId && circleCenterById.get(rel.circleId)) || rel.center;
+    const o = byId.get(centerKey);
+    const circle = layout.circles.find((it) => it.center === centerKey);
     if (!p || !o || !circle) {
       score += 5;
       continue;
@@ -337,7 +348,9 @@ function scoreLayout(model: GeometryModel, layout: LayoutModel): number {
 
   for (const nt of model.namedTangents) {
     const at = byId.get(nt.at);
-    const center = byId.get(nt.center ?? model.circlesByDiameter[0]?.centerId ?? "O");
+    const centerKey =
+      (nt.circleId && circleCenterById.get(nt.circleId)) || nt.center || model.circlesByDiameter[0]?.centerId || "O";
+    const center = byId.get(centerKey);
     const linePoint = byId.get(nt.linePoint);
     if (!at || !center || !linePoint) {
       score += 3;
@@ -349,6 +362,87 @@ function scoreLayout(model: GeometryModel, layout: LayoutModel): number {
   }
 
   return score;
+}
+
+function lineKey(a: string, b: string): string {
+  return [a, b].sort().join(":");
+}
+
+function buildLineEntities(model: GeometryModel): {
+  lineEntities: Array<{ id: string; a: string; b: string }>;
+  lineIdByKey: Map<string, string>;
+} {
+  const pairByKey = new Map<string, { a: string; b: string }>();
+  const add = (a: string, b: string): void => {
+    if (!a || !b || a === b) {
+      return;
+    }
+    const [x, y] = [a, b].sort();
+    pairByKey.set(`${x}:${y}`, { a: x, b: y });
+  };
+
+  for (const s of model.segments) add(s.a, s.b);
+  for (const p of model.pointsOnSegments) add(p.a, p.b);
+  for (const a of model.altitudes) add(a.baseA, a.baseB);
+  for (const m of model.medians) add(m.baseA, m.baseB);
+  for (const p of model.parallels) {
+    add(p.line1.a, p.line1.b);
+    add(p.line2.a, p.line2.b);
+  }
+  for (const p of model.perpendiculars) {
+    add(p.line1.a, p.line1.b);
+    add(p.line2.a, p.line2.b);
+  }
+  for (const p of model.perpendicularThroughPointIntersections) {
+    add(p.toLine.a, p.toLine.b);
+    add(p.withLine.a, p.withLine.b);
+  }
+  for (const t of model.tangentIntersections) {
+    add(t.withLine.a, t.withLine.b);
+  }
+  for (const n of model.namedTangents) {
+    add(n.at, n.linePoint);
+  }
+
+  const sorted = [...pairByKey.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const lineIdByKey = new Map<string, string>();
+  const lineEntities = sorted.map(([key, pair], idx) => {
+    const id = `L${idx + 1}`;
+    lineIdByKey.set(key, id);
+    return { id, a: pair.a, b: pair.b };
+  });
+
+  return { lineEntities, lineIdByKey };
+}
+
+function buildCircleEntities(model: GeometryModel, layout: LayoutModel): {
+  circleEntities: Array<{ id: string; center: string; radius?: number }>;
+  circleIdByCenter: Map<string, string>;
+} {
+  const centers = new Set<string>();
+  for (const c of layout.circles) centers.add(c.center);
+  for (const c of model.circlesByDiameter) centers.add(c.centerId ?? "O");
+  for (const p of model.pointsOnCircles) centers.add(p.center);
+  for (const t of model.tangents) if (t.circleCenter) centers.add(t.circleCenter);
+  for (const n of model.namedTangents) if (n.center) centers.add(n.center);
+  for (const t of model.tangentIntersections) if (t.center) centers.add(t.center);
+
+  const radiusByCenter = new Map<string, number>();
+  for (const c of layout.circles) {
+    if (!radiusByCenter.has(c.center)) {
+      radiusByCenter.set(c.center, c.radius);
+    }
+  }
+
+  const sortedCenters = [...centers].sort();
+  const circleIdByCenter = new Map<string, string>();
+  const circleEntities = sortedCenters.map((center, idx) => {
+    const id = `C${idx + 1}`;
+    circleIdByCenter.set(center, id);
+    return { id, center, radius: radiusByCenter.get(center) };
+  });
+
+  return { circleEntities, circleIdByCenter };
 }
 
 async function callOpenAIChat(messages: ChatMessage[], model?: string): Promise<string> {
@@ -471,6 +565,9 @@ async function solveGeometry(
   onProgress?.("render", "Rendering SVG diagram...");
   const svg = renderSvg(layout);
 
+  const { lineEntities, lineIdByKey } = buildLineEntities(enriched);
+  const { circleEntities, circleIdByCenter } = buildCircleEntities(enriched, layout);
+
   return {
     ok: true,
     parserVersion,
@@ -480,6 +577,7 @@ async function solveGeometry(
     svg,
     parsed: {
       points: enriched.points,
+      circles: enriched.circles,
       triangles: enriched.triangles,
       midpoints: enriched.midpoints,
       pointsOnSegments: enriched.pointsOnSegments,
@@ -493,7 +591,28 @@ async function solveGeometry(
       namedTangents: enriched.namedTangents,
       perpendicularThroughPointIntersections: enriched.perpendicularThroughPointIntersections,
       tangents: enriched.tangents,
-      tangentIntersections: enriched.tangentIntersections
+      tangentIntersections: enriched.tangentIntersections,
+      lineEntities,
+      circleEntities,
+      parallelsWithIds: enriched.parallels.map((p) => ({
+        line1Id: lineIdByKey.get(lineKey(p.line1.a, p.line1.b)) ?? "",
+        line2Id: lineIdByKey.get(lineKey(p.line2.a, p.line2.b)) ?? ""
+      })),
+      perpendicularsWithIds: enriched.perpendiculars.map((p) => ({
+        line1Id: lineIdByKey.get(lineKey(p.line1.a, p.line1.b)) ?? "",
+        line2Id: lineIdByKey.get(lineKey(p.line2.a, p.line2.b)) ?? ""
+      })),
+      tangentIntersectionsWithIds: enriched.tangentIntersections.map((t) => ({
+        at: t.at,
+        circleId: t.center ? circleIdByCenter.get(t.center) : circleIdByCenter.get(enriched.circlesByDiameter[0]?.centerId ?? "O"),
+        withLineId: lineIdByKey.get(lineKey(t.withLine.a, t.withLine.b)) ?? "",
+        intersection: t.intersection
+      })),
+      namedTangentsWithIds: enriched.namedTangents.map((n) => ({
+        at: n.at,
+        circleId: n.center ? circleIdByCenter.get(n.center) : circleIdByCenter.get(enriched.circlesByDiameter[0]?.centerId ?? "O"),
+        linePoint: n.linePoint
+      }))
     }
   };
 }
