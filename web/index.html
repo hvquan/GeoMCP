@@ -405,7 +405,7 @@
           const x = parseNumber(circle.getAttribute("cx"));
           const y = parseNumber(circle.getAttribute("cy"));
           g.style.cursor = "grab";
-          return { id, group: g, circle, text, x, y, lines: [], centeredCircles: [], radiusCircles: [] };
+          return { id, group: g, circle, text, x, y, prevX: x, prevY: y, lines: [], centeredCircles: [], radiusCircles: [] };
         })
         .filter(Boolean);
 
@@ -493,7 +493,7 @@
         cEl.setAttribute("r", String(distance(centerPoint.x, centerPoint.y, anchorPoint.x, anchorPoint.y)));
       }
 
-      function applyCircleConstraints() {
+      function applyCircleConstraints(initialChangedIds = []) {
         if (isApplyingConstraints) {
           return;
         }
@@ -501,10 +501,21 @@
         const data = parsed || {};
         const circlesByDiameter = Array.isArray(data.circlesByDiameter) ? data.circlesByDiameter : [];
         const pointsOnCircles = Array.isArray(data.pointsOnCircles) ? data.pointsOnCircles : [];
+        const perpendiculars = Array.isArray(data.perpendiculars) ? data.perpendiculars : [];
+        const perpThroughInters = Array.isArray(data.perpendicularThroughPointIntersections)
+          ? data.perpendicularThroughPointIntersections
+          : [];
         const tangents = Array.isArray(data.tangents) ? data.tangents : [];
         const namedTangents = Array.isArray(data.namedTangents) ? data.namedTangents : [];
         const tangentIntersections = Array.isArray(data.tangentIntersections) ? data.tangentIntersections : [];
         const pointsOnCircleSet = new Set(pointsOnCircles.map((r) => String(r.point || "").toUpperCase()));
+        const EPS = 1e-3;
+        let frontier = new Set(
+          (Array.isArray(initialChangedIds) && initialChangedIds.length ? initialChangedIds : points.map((p) => p.id))
+            .map((id) => String(id || "").toUpperCase())
+            .filter(Boolean)
+        );
+        let nextFrontier = new Set();
 
         function lineIntersection(a1, a2, b1, b2) {
           const den = (a1.x - a2.x) * (b1.y - b2.y) - (a1.y - a2.y) * (b1.x - b2.x);
@@ -520,12 +531,29 @@
 
         function setDependentPoint(p, x, y) {
           if (!p) {
-            return;
+            return false;
           }
           if (lockPointId && String(p.id || "").toUpperCase() === String(lockPointId).toUpperCase()) {
-            return;
+            return false;
+          }
+          if (distance(p.x, p.y, x, y) < EPS) {
+            return false;
           }
           updatePoint(p, x, y, true);
+          nextFrontier.add(String(p.id || "").toUpperCase());
+          return true;
+        }
+
+        function hasAnyChanged(ids) {
+          for (const id of ids) {
+            if (!id) {
+              continue;
+            }
+            if (frontier.has(String(id).toUpperCase())) {
+              return true;
+            }
+          }
+          return false;
         }
 
         function resolveCenterId(rel) {
@@ -585,7 +613,48 @@
           setDependentPoint(endpoint, at.x + dir.x * keepLen, at.y + dir.y * keepLen);
         }
 
-        for (let iter = 0; iter < 3; iter += 1) {
+        function enforcePerpendicular(line1, line2) {
+          const p1 = getPoint(line1?.a);
+          const p2 = getPoint(line1?.b);
+          const q1 = getPoint(line2?.a);
+          const q2 = getPoint(line2?.b);
+          if (!p1 || !p2 || !q1 || !q2) {
+            return;
+          }
+
+          const vx = p2.x - p1.x;
+          const vy = p2.y - p1.y;
+          const len = Math.sqrt(vx * vx + vy * vy) || 1;
+          const perp = { x: -vy / len, y: vx / len };
+
+          const q1Locked = lockPointId && sameId(lockPointId, q1.id);
+          const q2Locked = lockPointId && sameId(lockPointId, q2.id);
+
+          if (q1Locked && q2Locked) {
+            return;
+          }
+
+          if (q1Locked) {
+            const keepLen = distance(q1.x, q1.y, q2.x, q2.y) || 80;
+            setDependentPoint(q2, q1.x + perp.x * keepLen, q1.y + perp.y * keepLen);
+            return;
+          }
+
+          if (q2Locked) {
+            const keepLen = distance(q1.x, q1.y, q2.x, q2.y) || 80;
+            setDependentPoint(q1, q2.x - perp.x * keepLen, q2.y - perp.y * keepLen);
+            return;
+          }
+
+          const keepLen = distance(q1.x, q1.y, q2.x, q2.y) || 80;
+          setDependentPoint(q2, q1.x + perp.x * keepLen, q1.y + perp.y * keepLen);
+        }
+
+        for (let layer = 0; layer < 12; layer += 1) {
+          if (!frontier.size) {
+            break;
+          }
+          nextFrontier = new Set();
           for (const dc of circlesByDiameter) {
             const a = getPoint(dc.a);
             const b = getPoint(dc.b);
@@ -594,14 +663,22 @@
             if (!a || !b || !center) {
               continue;
             }
+            if (!hasAnyChanged([dc.a, dc.b, centerId])) {
+              continue;
+            }
 
             const lockedCenter = lockPointId && sameId(lockPointId, center.id);
             const lockedA = lockPointId && sameId(lockPointId, a.id);
             const lockedB = lockPointId && sameId(lockPointId, b.id);
 
             if (lockedCenter) {
-              // User drags center: keep one endpoint and mirror the other so CD remains a diameter.
-              setDependentPoint(b, 2 * center.x - a.x, 2 * center.y - a.y);
+              // User drags center: translate both diameter endpoints with the center shift.
+              const dx = center.x - center.prevX;
+              const dy = center.y - center.prevY;
+              if (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9) {
+                setDependentPoint(a, a.x + dx, a.y + dy);
+                setDependentPoint(b, b.x + dx, b.y + dy);
+              }
             } else if (lockedA) {
               setDependentPoint(b, 2 * center.x - a.x, 2 * center.y - a.y);
             } else if (lockedB) {
@@ -625,6 +702,9 @@
             if (!p || !center || !cEl) {
               continue;
             }
+            if (!hasAnyChanged([rel.point, rel.center])) {
+              continue;
+            }
             const r = parseNumber(cEl.getAttribute("r"), 0);
             const vx = p.x - center.x;
             const vy = p.y - center.y;
@@ -632,9 +712,61 @@
             setDependentPoint(p, center.x + (vx / len) * r, center.y + (vy / len) * r);
           }
 
+          // Keep explicit perpendicular constraints stable with directional dependency.
+          // Prefer making the line that passes through O depend on the other line.
+          for (const rel of perpendiculars) {
+            if (!hasAnyChanged([rel.line1?.a, rel.line1?.b, rel.line2?.a, rel.line2?.b])) {
+              continue;
+            }
+            const l1a = getPoint(rel.line1?.a);
+            const l1b = getPoint(rel.line1?.b);
+            const l2a = getPoint(rel.line2?.a);
+            const l2b = getPoint(rel.line2?.b);
+
+            const l1HasO = sameId(l1a?.id, "O") || sameId(l1b?.id, "O");
+            const l2HasO = sameId(l2a?.id, "O") || sameId(l2b?.id, "O");
+
+            if (l1HasO && !l2HasO) {
+              enforcePerpendicular(rel.line2, rel.line1);
+            } else if (l2HasO && !l1HasO) {
+              enforcePerpendicular(rel.line1, rel.line2);
+            } else {
+              enforcePerpendicular(rel.line1, rel.line2);
+            }
+          }
+
+          // Through-point line perpendicular to `toLine`, intersecting `withLine` at `intersection`.
+          for (const rel of perpThroughInters) {
+            if (!hasAnyChanged([rel.through, rel.toLine?.a, rel.toLine?.b, rel.withLine?.a, rel.withLine?.b])) {
+              continue;
+            }
+            const through = getPoint(rel.through);
+            const toA = getPoint(rel.toLine?.a);
+            const toB = getPoint(rel.toLine?.b);
+            const w1 = getPoint(rel.withLine?.a);
+            const w2 = getPoint(rel.withLine?.b);
+            const inter = getPoint(rel.intersection);
+            if (!through || !toA || !toB || !w1 || !w2 || !inter) {
+              continue;
+            }
+
+            const vx = toB.x - toA.x;
+            const vy = toB.y - toA.y;
+            // Any point offset by (-vy, vx) defines a perpendicular line through `through`.
+            const perpEnd = { x: through.x - vy, y: through.y + vx };
+            const hit = lineIntersection(through, perpEnd, w1, w2);
+            if (!hit) {
+              continue;
+            }
+            setDependentPoint(inter, hit.x, hit.y);
+          }
+
           // Keep named tangent lines perpendicular to the circle radius at the touch point.
           for (const rel of namedTangents) {
             const centerId = resolveCenterId(rel);
+            if (!hasAnyChanged([rel.at, centerId, rel.linePoint])) {
+              continue;
+            }
             const at = getPoint(rel.at);
             const center = getPoint(centerId);
             const linePoint = resolveTangentEndpoint(at, rel.linePoint, centerId);
@@ -647,6 +779,9 @@
           // Also enforce generic tangents: any non-radius endpoint attached to tangent touch point must rotate with OC.
           for (const rel of tangents) {
             const centerId = resolveCenterId(rel);
+            if (!hasAnyChanged([rel.at, centerId])) {
+              continue;
+            }
             const at = getPoint(rel.at);
             const center = getPoint(centerId);
             if (!at || !center) {
@@ -683,6 +818,9 @@
           // Recompute intersections that depend on tangent lines.
           for (const rel of tangentIntersections) {
             const centerId = resolveCenterId(rel);
+            if (!hasAnyChanged([rel.at, centerId, rel.withLine?.a, rel.withLine?.b, rel.intersection])) {
+              continue;
+            }
             const at = getPoint(rel.at);
             const center = getPoint(centerId);
             const inter = getPoint(rel.intersection) || resolveTangentEndpoint(at, rel.intersection, centerId);
@@ -702,12 +840,16 @@
             }
             setDependentPoint(inter, hit.x, hit.y);
           }
+
+          frontier = nextFrontier;
         }
 
         isApplyingConstraints = false;
       }
 
       function updatePoint(p, x, y, skipConstraints = false) {
+        p.prevX = p.x;
+        p.prevY = p.y;
         p.x = x;
         p.y = y;
         p.circle.setAttribute("cx", String(x));
@@ -737,7 +879,7 @@
         }
 
         if (!skipConstraints) {
-          applyCircleConstraints();
+          applyCircleConstraints([p.id]);
         }
       }
 
@@ -819,7 +961,7 @@
       }, { passive: false });
 
       // Snap initial geometry to key circle constraints to avoid visible drift.
-      applyCircleConstraints();
+      applyCircleConstraints(points.map((p) => p.id));
     }
 
     function renderTurn(turn) {
