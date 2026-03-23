@@ -8,7 +8,7 @@ import { buildLayout } from "./layout.js";
 import { enrichModelForV2 } from "./v2Model.js";
 import { refineLayoutWithSolver } from "./solver.js";
 import { renderSvg } from "./svg.js";
-import type { GeometryModel } from "./types.js";
+import type { GeometryModel, LayoutModel, Point } from "./types.js";
 
 type SolveRequest = {
   sessionId?: string;
@@ -28,9 +28,17 @@ type SolveResult = {
   parsed: {
     points: string[];
     triangles: GeometryModel["triangles"];
+    midpoints: GeometryModel["midpoints"];
+    pointsOnSegments: GeometryModel["pointsOnSegments"];
+    altitudes: GeometryModel["altitudes"];
+    medians: GeometryModel["medians"];
+    angleBisectors: GeometryModel["angleBisectors"];
+    parallels: GeometryModel["parallels"];
     circlesByDiameter: GeometryModel["circlesByDiameter"];
     pointsOnCircles: GeometryModel["pointsOnCircles"];
     perpendiculars: GeometryModel["perpendiculars"];
+    namedTangents: GeometryModel["namedTangents"];
+    perpendicularThroughPointIntersections: GeometryModel["perpendicularThroughPointIntersections"];
     tangents: GeometryModel["tangents"];
     tangentIntersections: GeometryModel["tangentIntersections"];
   };
@@ -196,6 +204,153 @@ function parseCompletionText(payload: any): string {
   throw new Error("Unexpected completion output format");
 }
 
+function dist(a: Point, b: Point): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function pointLineDistance(p: Point, a: Point, b: Point): number {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const len = Math.sqrt(vx * vx + vy * vy) || 1;
+  return Math.abs(vy * p.x - vx * p.y + b.x * a.y - b.y * a.x) / len;
+}
+
+function normalizedDotAbs(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const la = Math.sqrt(a.x * a.x + a.y * a.y) || 1;
+  const lb = Math.sqrt(b.x * b.x + b.y * b.y) || 1;
+  return Math.abs((a.x * b.x + a.y * b.y) / (la * lb));
+}
+
+function normalizedCrossAbs(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const la = Math.sqrt(a.x * a.x + a.y * a.y) || 1;
+  const lb = Math.sqrt(b.x * b.x + b.y * b.y) || 1;
+  return Math.abs((a.x * b.y - a.y * b.x) / (la * lb));
+}
+
+function scoreLayout(model: GeometryModel, layout: LayoutModel): number {
+  const byId = new Map(layout.points.map((p) => [p.id, p]));
+  let score = 0;
+
+  for (const c of model.circlesByDiameter) {
+    const a = byId.get(c.a);
+    const b = byId.get(c.b);
+    const center = byId.get(c.centerId ?? "O");
+    if (!a || !b || !center) {
+      score += 5;
+      continue;
+    }
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const r = dist(a, b) / 2;
+    score += dist(center, { id: "", x: mx, y: my });
+    score += Math.abs(dist(center, a) - r) + Math.abs(dist(center, b) - r);
+  }
+
+  for (const rel of model.pointsOnCircles) {
+    const p = byId.get(rel.point);
+    const o = byId.get(rel.center);
+    const circle = layout.circles.find((it) => it.center === rel.center);
+    if (!p || !o || !circle) {
+      score += 5;
+      continue;
+    }
+    score += Math.abs(dist(p, o) - circle.radius);
+  }
+
+  for (const mp of model.midpoints) {
+    const p = byId.get(mp.point);
+    const a = byId.get(mp.a);
+    const b = byId.get(mp.b);
+    if (!p || !a || !b) {
+      score += 4;
+      continue;
+    }
+    score += dist(p, { id: "", x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  }
+
+  for (const rel of model.pointsOnSegments) {
+    const p = byId.get(rel.point);
+    const a = byId.get(rel.a);
+    const b = byId.get(rel.b);
+    if (!p || !a || !b) {
+      score += 3;
+      continue;
+    }
+    score += pointLineDistance(p, a, b);
+  }
+
+  for (const alt of model.altitudes) {
+    const from = byId.get(alt.from);
+    const foot = byId.get(alt.foot);
+    const a = byId.get(alt.baseA);
+    const b = byId.get(alt.baseB);
+    if (!from || !foot || !a || !b) {
+      score += 4;
+      continue;
+    }
+    const base = { x: b.x - a.x, y: b.y - a.y };
+    const h = { x: foot.x - from.x, y: foot.y - from.y };
+    score += normalizedDotAbs(base, h);
+    score += pointLineDistance(foot, a, b);
+  }
+
+  for (const md of model.medians) {
+    const foot = byId.get(md.foot);
+    const a = byId.get(md.baseA);
+    const b = byId.get(md.baseB);
+    if (!foot || !a || !b) {
+      score += 3;
+      continue;
+    }
+    score += dist(foot, { id: "", x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  }
+
+  for (const rel of model.parallels) {
+    const a = byId.get(rel.line1.a);
+    const b = byId.get(rel.line1.b);
+    const c = byId.get(rel.line2.a);
+    const d = byId.get(rel.line2.b);
+    if (!a || !b || !c || !d) {
+      score += 3;
+      continue;
+    }
+    const v1 = { x: b.x - a.x, y: b.y - a.y };
+    const v2 = { x: d.x - c.x, y: d.y - c.y };
+    score += normalizedCrossAbs(v1, v2);
+  }
+
+  for (const rel of model.perpendiculars) {
+    const a = byId.get(rel.line1.a);
+    const b = byId.get(rel.line1.b);
+    const c = byId.get(rel.line2.a);
+    const d = byId.get(rel.line2.b);
+    if (!a || !b || !c || !d) {
+      score += 3;
+      continue;
+    }
+    const v1 = { x: b.x - a.x, y: b.y - a.y };
+    const v2 = { x: d.x - c.x, y: d.y - c.y };
+    score += normalizedDotAbs(v1, v2);
+  }
+
+  for (const nt of model.namedTangents) {
+    const at = byId.get(nt.at);
+    const center = byId.get(nt.center ?? model.circlesByDiameter[0]?.centerId ?? "O");
+    const linePoint = byId.get(nt.linePoint);
+    if (!at || !center || !linePoint) {
+      score += 3;
+      continue;
+    }
+    const radial = { x: at.x - center.x, y: at.y - center.y };
+    const tangent = { x: linePoint.x - at.x, y: linePoint.y - at.y };
+    score += normalizedDotAbs(radial, tangent);
+  }
+
+  return score;
+}
+
 async function callOpenAIChat(messages: ChatMessage[], model?: string): Promise<string> {
   const cfg = getOpenAIConfig();
   const response = await fetch(`${cfg.baseUrl}/chat/completions`, {
@@ -294,7 +449,16 @@ async function solveGeometry(
   onProgress?.("solve", "Applying relation enrichment and constraint solver...");
   const enriched = enrichModelForV2(parsed);
   const baseLayout = buildLayout(enriched);
-  const layout = refineLayoutWithSolver(enriched, baseLayout, { iterations: solverIterations });
+  const refinedLayout = refineLayoutWithSolver(enriched, baseLayout, { iterations: solverIterations });
+
+  // Keep the solution that better satisfies geometric constraints.
+  const baseScore = scoreLayout(enriched, baseLayout);
+  const refinedScore = scoreLayout(enriched, refinedLayout);
+  const layout = refinedScore <= baseScore ? refinedLayout : baseLayout;
+  if (refinedScore > baseScore) {
+    warnings.push("Solver refinement skipped: base layout satisfies constraints better.");
+  }
+  warnings.push(`Constraint score (base=${baseScore.toFixed(3)}, refined=${refinedScore.toFixed(3)}).`);
 
   onProgress?.("render", "Rendering SVG diagram...");
   const svg = renderSvg(layout);
@@ -309,9 +473,17 @@ async function solveGeometry(
     parsed: {
       points: enriched.points,
       triangles: enriched.triangles,
+      midpoints: enriched.midpoints,
+      pointsOnSegments: enriched.pointsOnSegments,
+      altitudes: enriched.altitudes,
+      medians: enriched.medians,
+      angleBisectors: enriched.angleBisectors,
+      parallels: enriched.parallels,
       circlesByDiameter: enriched.circlesByDiameter,
       pointsOnCircles: enriched.pointsOnCircles,
       perpendiculars: enriched.perpendiculars,
+      namedTangents: enriched.namedTangents,
+      perpendicularThroughPointIntersections: enriched.perpendicularThroughPointIntersections,
       tangents: enriched.tangents,
       tangentIntersections: enriched.tangentIntersections
     }
