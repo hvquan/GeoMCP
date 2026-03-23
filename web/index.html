@@ -411,6 +411,13 @@
 
       const pointById = new Map(points.map((p) => [p.id, p]));
 
+      function getPoint(id) {
+        if (!id || typeof id !== "string") {
+          return null;
+        }
+        return pointById.get(id) || pointById.get(id.toUpperCase()) || pointById.get(id.toLowerCase()) || null;
+      }
+
       const lines = Array.from(svg.querySelectorAll("line"));
       for (const line of lines) {
         const x1 = parseNumber(line.getAttribute("x1"));
@@ -420,10 +427,10 @@
         const p1 = findNearestPoint(points, x1, y1, 8);
         const p2 = findNearestPoint(points, x2, y2, 8);
         if (p1) {
-          p1.lines.push({ line, end: 1 });
+          p1.lines.push({ line, end: 1, other: p2 || null });
         }
         if (p2) {
-          p2.lines.push({ line, end: 2 });
+          p2.lines.push({ line, end: 2, other: p1 || null });
         }
       }
 
@@ -493,12 +500,85 @@
         const data = parsed || {};
         const circlesByDiameter = Array.isArray(data.circlesByDiameter) ? data.circlesByDiameter : [];
         const pointsOnCircles = Array.isArray(data.pointsOnCircles) ? data.pointsOnCircles : [];
+        const tangents = Array.isArray(data.tangents) ? data.tangents : [];
+        const namedTangents = Array.isArray(data.namedTangents) ? data.namedTangents : [];
+        const tangentIntersections = Array.isArray(data.tangentIntersections) ? data.tangentIntersections : [];
+        const pointsOnCircleSet = new Set(pointsOnCircles.map((r) => String(r.point || "").toUpperCase()));
+
+        function lineIntersection(a1, a2, b1, b2) {
+          const den = (a1.x - a2.x) * (b1.y - b2.y) - (a1.y - a2.y) * (b1.x - b2.x);
+          if (Math.abs(den) < 1e-9) {
+            return null;
+          }
+          const px =
+            ((a1.x * a2.y - a1.y * a2.x) * (b1.x - b2.x) - (a1.x - a2.x) * (b1.x * b2.y - b1.y * b2.x)) / den;
+          const py =
+            ((a1.x * a2.y - a1.y * a2.x) * (b1.y - b2.y) - (a1.y - a2.y) * (b1.x * b2.y - b1.y * b2.x)) / den;
+          return { x: px, y: py };
+        }
+
+        function resolveCenterId(rel) {
+          return rel.center || rel.circleCenter || circlesByDiameter[0]?.centerId || "O";
+        }
+
+        function sameId(a, b) {
+          return String(a || "").toUpperCase() === String(b || "").toUpperCase();
+        }
+
+        function resolveTangentEndpoint(atPoint, preferredId, centerId) {
+          if (!atPoint) {
+            return null;
+          }
+
+          const byName = getPoint(preferredId);
+          if (byName) {
+            return byName;
+          }
+
+          // Fallback when parser naming differs: pick a non-radius endpoint connected to touch point.
+          for (const link of atPoint.lines) {
+            const other = link.other;
+            if (!other) {
+              continue;
+            }
+            if (sameId(other.id, centerId)) {
+              continue;
+            }
+            if (!pointsOnCircleSet.has(String(other.id || "").toUpperCase())) {
+              return other;
+            }
+          }
+
+          for (const link of atPoint.lines) {
+            const other = link.other;
+            if (other && !sameId(other.id, centerId)) {
+              return other;
+            }
+          }
+          return null;
+        }
+
+        function tangentDirection(at, center) {
+          const rvx = at.x - center.x;
+          const rvy = at.y - center.y;
+          const rlen = Math.sqrt(rvx * rvx + rvy * rvy) || 1;
+          return { x: -rvy / rlen, y: rvx / rlen };
+        }
+
+        function moveEndpointAlongTangent(at, center, endpoint) {
+          if (!at || !center || !endpoint) {
+            return;
+          }
+          const dir = tangentDirection(at, center);
+          const keepLen = distance(endpoint.x, endpoint.y, at.x, at.y) || 80;
+          updatePoint(endpoint, at.x + dir.x * keepLen, at.y + dir.y * keepLen, true);
+        }
 
         for (const dc of circlesByDiameter) {
-          const a = pointById.get(dc.a);
-          const b = pointById.get(dc.b);
+          const a = getPoint(dc.a);
+          const b = getPoint(dc.b);
           const centerId = dc.centerId || "O";
-          const center = pointById.get(centerId);
+          const center = getPoint(centerId);
           if (!a || !b || !center) {
             continue;
           }
@@ -510,9 +590,9 @@
         }
 
         for (const rel of pointsOnCircles) {
-          const p = pointById.get(rel.point);
-          const center = pointById.get(rel.center);
-          const cEl = circleByCenterId.get(rel.center);
+          const p = getPoint(rel.point);
+          const center = getPoint(rel.center);
+          const cEl = center ? circleByCenterId.get(center.id) : null;
           if (!p || !center || !cEl) {
             continue;
           }
@@ -521,6 +601,77 @@
           const vy = p.y - center.y;
           const len = Math.sqrt(vx * vx + vy * vy) || 1;
           updatePoint(p, center.x + (vx / len) * r, center.y + (vy / len) * r, true);
+        }
+
+        // Keep named tangent lines perpendicular to the circle radius at the touch point.
+        for (const rel of namedTangents) {
+          const centerId = resolveCenterId(rel);
+          const at = getPoint(rel.at);
+          const center = getPoint(centerId);
+          const linePoint = resolveTangentEndpoint(at, rel.linePoint, centerId);
+          if (!at || !linePoint || !center) {
+            continue;
+          }
+          moveEndpointAlongTangent(at, center, linePoint);
+        }
+
+        // Also enforce generic tangents: any non-radius endpoint attached to tangent touch point must rotate with OC.
+        for (const rel of tangents) {
+          const centerId = resolveCenterId(rel);
+          const at = getPoint(rel.at);
+          const center = getPoint(centerId);
+          if (!at || !center) {
+            continue;
+          }
+
+          const candidates = [];
+          const seen = new Set();
+          for (const link of at.lines) {
+            const other = link.other;
+            if (!other) {
+              continue;
+            }
+            const otherKey = String(other.id || "").toUpperCase();
+            if (seen.has(otherKey)) {
+              continue;
+            }
+            if (sameId(other.id, center.id)) {
+              continue;
+            }
+            // Do not drag another point that is explicitly constrained to stay on a circle.
+            if (pointsOnCircleSet.has(otherKey)) {
+              continue;
+            }
+            seen.add(otherKey);
+            candidates.push(other);
+          }
+
+          for (const endpoint of candidates) {
+            moveEndpointAlongTangent(at, center, endpoint);
+          }
+        }
+
+        // Recompute intersections that depend on tangent lines.
+        for (const rel of tangentIntersections) {
+          const centerId = resolveCenterId(rel);
+          const at = getPoint(rel.at);
+          const center = getPoint(centerId);
+          const inter = getPoint(rel.intersection) || resolveTangentEndpoint(at, rel.intersection, centerId);
+          const w1 = getPoint(rel.withLine?.a);
+          const w2 = getPoint(rel.withLine?.b);
+          if (!at || !center || !inter || !w1 || !w2) {
+            continue;
+          }
+
+          const rvx = at.x - center.x;
+          const rvy = at.y - center.y;
+          const tangentDir = { x: -rvy, y: rvx };
+          const tangentEnd = { x: at.x + tangentDir.x, y: at.y + tangentDir.y };
+          const hit = lineIntersection(at, tangentEnd, w1, w2);
+          if (!hit) {
+            continue;
+          }
+          updatePoint(inter, hit.x, hit.y, true);
         }
 
         isApplyingConstraints = false;
