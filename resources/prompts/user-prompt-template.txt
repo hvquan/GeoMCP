@@ -1,0 +1,6 @@
+Convert this geometry problem into structured DSL.
+The DSL MUST be constraint-based.
+Return ONLY one valid JSON object. No markdown.
+
+Problem:
+<PASTE PROBLEM HERE>

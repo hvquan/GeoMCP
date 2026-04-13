@@ -1,0 +1,39 @@
+// input: "36: Given circle (O) with diameter CD. Let E be a point on circle (O), E ≠ C, D."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "point",
+      "name": "C"
+    },
+    {
+      "type": "point",
+      "name": "D"
+    },
+    {
+      "type": "point",
+      "name": "E"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "C",
+        "D"
+      ]
+    },
+    {
+      "type": "on_circle",
+      "point": "E",
+      "circle": "O"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

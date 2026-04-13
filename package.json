@@ -6,9 +6,19 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/index.ts",
+    "test": "tsx --test tests/**/*.test.ts",
+    "test:replay": "tsx tests/replay-all.mts",
+    "test:replay:verbose": "tsx tests/replay-all.mts --verbose",
+    "test:capture": "env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen tsx tests/capture-llm.mts",
+    "test:manual": "tsx tests/run-jsonc.mts",
+    "mcp": "tsx src/index.ts",
+    "mcp:debug": "NODE_OPTIONS='--inspect --enable-source-maps' tsx src/index.ts",
+    "mcp:local": "env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen tsx src/index.ts",
     "start": "node dist/index.js",
     "web": "tsx src/webapp.ts",
+    "web:debug": "NODE_OPTIONS='--inspect --enable-source-maps' tsx src/webapp.ts",
+    "web:local": "pkill -f 'tsx src/webapp' 2>/dev/null; sleep 0.3; env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen tsx src/webapp.ts",
+    "web:local:debug": "pkill -f 'tsx src/webapp' 2>/dev/null; sleep 0.3; env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen NODE_OPTIONS='--inspect --enable-source-maps' tsx src/webapp.ts",
     "start:web": "node dist/webapp.js"
   },
   "keywords": [

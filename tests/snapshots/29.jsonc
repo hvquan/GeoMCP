@@ -1,0 +1,29 @@
+// input: "29: Given circle (O) with diameter AB."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "segment",
+      "points": [
+        "A",
+        "B"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "A",
+        "B"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

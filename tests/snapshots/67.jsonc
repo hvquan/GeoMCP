@@ -1,0 +1,175 @@
+// input: "67: Given a circle (O) with diameter CD. The tangent at point C is the line Cx. Let E be a point on the circle (O) (E ≠ C, D). Through O, draw a line perpendicular to CE, intersecting Cx at point A.\na) Prove that AE is a tangent to the circle (O).\nb) Draw the tangent to the circle (O) at point D. This tangent intersects AE at point B. Prove that:\n- AC + BD = AB\n- Triangle AOB is right-angled at O\nc) Draw EH ⟂ CD at point H. Prove that lines AD and BC intersect at the midpoint of EH."
+// model: handcrafted
+{
+  "objects": [
+    {"type": "circle", "center": "O"},
+    {"type": "point", "name": "C"},
+    {"type": "point", "name": "D"},
+    {"type": "point", "name": "E"},
+    {"type": "point", "name": "A"},
+    {"type": "point", "name": "B"},
+    {"type": "point", "name": "H"},
+    {"type": "point", "name": "N"},
+    {"type": "line", "name": "Cx"},
+    {"type": "line", "name": "Dt"},
+    {"type": "segment", "points": ["C", "D"]},
+    {"type": "segment", "points": ["A", "E"]},
+    {"type": "segment", "points": ["A", "D"]},
+    {"type": "segment", "points": ["B", "C"]},
+    {"type": "segment", "points": ["E", "H"]}
+  ],
+  "constraints": [
+    {"type": "diameter", "circle": "O", "points": ["C", "D"]},
+    {"type": "tangent", "at": "C", "line": "Cx", "circle": "O"},
+    {"type": "on_circle", "point": "E", "circle": "O"},
+    {"type": "tangent", "at": "D", "line": "Dt", "circle": "O"},
+    {"type": "perpendicular", "line1": "EH", "line2": "CD"},
+    {"type": "intersection", "point": "H", "of": ["EH", "CD"]}
+  ],
+  "constructions": [
+    {"type": "intersection", "point": "A", "of": ["l1", "Cx"]},
+    {"type": "intersection", "point": "B", "of": ["Dt", "AE"]},
+    {"type": "intersection", "point": "N", "of": ["AD", "BC"]}
+  ],
+  "targets": [
+    {"type": "tangent", "line": "AE", "circle": "O"},
+    {"type": "equation", "expr": "AC+BD=AB"},
+    {"type": "right_angle", "at": "O", "triangle": ["A", "O", "B"]},
+    {"type": "midpoint", "point": "N", "segment": ["E", "H"]}
+  ]
+}
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "point",
+      "name": "C"
+    },
+    {
+      "type": "point",
+      "name": "D"
+    },
+    {
+      "type": "line",
+      "name": "Cx"
+    },
+    {
+      "type": "point",
+      "name": "E"
+    },
+    {
+      "type": "segment",
+      "points": [
+        "A",
+        "E"
+      ]
+    },
+    {
+      "type": "line",
+      "name": "OA"
+    },
+    {
+      "type": "point",
+      "name": "A"
+    },
+    {
+      "type": "point",
+      "name": "B"
+    },
+    {
+      "type": "point",
+      "name": "H"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "C",
+        "D"
+      ]
+    },
+    {
+      "type": "tangent",
+      "at": "C",
+      "line": "Cx",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "E",
+      "circle": "O"
+    }
+  ],
+  "constructions": [
+    {
+      "type": "perpendicular",
+      "line1": "OA",
+      "line2": "CE"
+    },
+    {
+      "type": "intersection",
+      "point": "A",
+      "of": [
+        "OA",
+        "Cx"
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "type": "statement",
+      "parts": [
+        {
+          "type": "equation",
+          "expr": "AC + BD = AB"
+        },
+        {
+          "type": "right_angle",
+          "at": "O",
+          "triangle": [
+            "A",
+            "O",
+            "B"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "tangent",
+      "at": "D",
+      "line": "Dt",
+      "circle": "O"
+    },
+    {
+      "type": "intersection",
+      "point": "B",
+      "of": [
+        "Dt",
+        "AE"
+      ]
+    },
+    {
+      "type": "statement",
+      "parts": [
+        {
+          "type": "perpendicular",
+          "line1": "EH",
+          "line2": "CD"
+        }
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "EH",
+        "CD"
+      ]
+    }
+  ]
+}

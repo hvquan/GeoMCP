@@ -1,0 +1,141 @@
+01: Given two points A and B.
+
+02: Given segment AB.
+
+03: Given segment AB with midpoint M.
+
+04: Given line d and point A on line d.
+
+05: Given line d and point M not on line d.
+
+06: Given two lines a and b intersecting at O.
+
+07: Given triangle ABC.
+
+08: Given triangle ABC with midpoint M of side BC.
+
+09: Given triangle ABC with median AM.
+
+10: Given triangle ABC with angle bisector AK.
+
+11: Given triangle ABC with altitude AH.
+
+12: Given triangle ABC with median AM and altitude AH.
+
+13: Given triangle ABC with median AM, angle bisector BK, and altitude CH.
+
+14: Given triangle ABC. Let G be the intersection of the three medians of the triangle.
+
+15: Given triangle ABC. Let I be the intersection of the three angle bisectors of the triangle.
+
+16: Given triangle ABC. Let H be the intersection of the three altitudes of the triangle.
+
+17: Given triangle ABC. Let M be the midpoint of BC, N the midpoint of CA, and P the midpoint of AB.
+
+18: Given triangle ABC. The medians AM, BN, CP intersect at G.
+
+19: Given triangle ABC. The angle bisectors AD, BE, CF intersect at I.
+
+20: Given triangle ABC. The altitudes AD, BE, CF intersect at H.
+
+21: Given acute triangle ABC. Draw the altitudes AD, BE, CF.
+
+22: Given triangle ABC right-angled at A. Let M be the midpoint of BC.
+
+23: Given isosceles triangle ABC with apex A. Draw the altitude AH.
+
+24: Given equilateral triangle ABC. Let G be the centroid of the triangle.
+
+25: Given circle with center O.
+
+26: Given circle with center O and radius OA.
+
+27: Given circle (O) and point A on circle (O).
+
+28: Given circle (O) and chord AB.
+
+29: Given circle (O) with diameter AB.
+
+30: Given circle (O) with diameter CD.
+
+31: Given circle (O) with radius OA. Draw the tangent to circle (O) at A.
+
+32: Given circle (O) with radius OB. Draw the tangent to circle (O) at B.
+
+33: Given circle (O) with diameter AB. Draw the tangent Ax at A.
+
+34: Given circle (O) with diameter CD. Draw the tangent Cx at C and the tangent Dy at D.
+
+35: Given circle (O) with diameter AB. Let M be a point on circle (O), M ≠ A, B.
+
+36: Given circle (O) with diameter CD. Let E be a point on circle (O), E ≠ C, D.
+
+37: Given circle (O) with diameter CD. Let E be a point on circle (O), E ≠ C, D. Draw EH perpendicular to CD at H.
+
+38: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D.
+
+39: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D. Through O draw a line perpendicular to CE.
+
+40: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D. Through O draw a line perpendicular to CE, intersecting Cx at A.
+
+41: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D. Through O draw a line perpendicular to CE, intersecting Cx at A. Prove that AE is a tangent to circle (O).
+
+42: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D. Through O draw a line perpendicular to CE, intersecting Cx at A. Draw the tangent to circle (O) at D; this tangent intersects AE at B.
+
+43: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D. Through O draw a line perpendicular to CE, intersecting Cx at A. Draw the tangent to circle (O) at D; this tangent intersects AE at B. Draw EH perpendicular to CD at H.
+
+44: Given acute triangle ABC inscribed in circle (O).
+
+45: Given acute triangle ABC inscribed in circle (O). Draw the altitudes AD, BE, CF.
+
+46: Given acute triangle ABC inscribed in circle (O). Let H be the orthocenter of triangle ABC.
+
+47: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O).
+
+48: Given acute triangle ABC inscribed in circle (O). Let M be the midpoint of BC. Let I be the incenter of triangle ABC.
+
+49: Given triangle ABC inscribed in circle (O). Draw the tangents to circle (O) at A, B, and C respectively.
+
+50: Given rectangle ABCD.
+
+51: Given rectangle ABCD. Prove that the four points A, B, C, D lie on a common circle.
+
+52: Given square ABCD. Let O be the intersection of the two diagonals.
+
+53: Given quadrilateral ABCD inscribed in circle (O).
+
+54: Given quadrilateral ABCD inscribed in circle (O). The diagonals AC and BD intersect at M.
+
+55: Given isosceles trapezoid ABCD inscribed in circle (O).
+
+56: Given triangle ABC. The medians AM, BN, CP intersect at G. Prove that the three points M, N, P are collinear if and only if triangle ABC is degenerate.
+
+57: Given acute triangle ABC. The altitudes AD, BE, CF intersect at H. Prove that the points D, E, F lie on a common circle.
+
+58: Given triangle ABC right-angled at A. Let M be the midpoint of BC. Prove that MA = MB = MC.
+
+59: Given circle (O) with diameter AB. Let M be a point on circle (O), M ≠ A, B. Prove that triangle AMB is right-angled at M.
+
+60: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D. Through O draw a line perpendicular to CE, intersecting Cx at A. Draw the tangent to circle (O) at D; this tangent intersects AE at B. Prove that AC + BD = AB.
+
+61: Given circle (O) with diameter CD. The tangent at C is line Cx. Let E be a point on circle (O), E ≠ C, D. Through O draw a line perpendicular to CE, intersecting Cx at A. Draw the tangent to circle (O) at D; this tangent intersects AE at B. Prove that triangle AOB is right-angled at O.
+
+62: Given acute triangle ABC inscribed in circle (O). The altitudes AD, BE, CF intersect at H.
+
+63: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O). The altitudes AD, BE, CF intersect at H.
+
+64: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O). Line EF intersects circle (O) at two points P and Q.
+
+65: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O). The altitudes AD, BE, CF intersect at H. Line EF intersects circle (O) at two points P and Q. Let M be the midpoint of BC.
+
+66: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O). The altitudes AD, BE, CF intersect at H. Line EF intersects circle (O) at two points P and Q. Let M be the midpoint of BC.
+1. Prove that angle OAC equals angle BAH.
+2. Prove that AP^2 = 2*AD*OM.
+3. Chord KQ intersects BC at L. Prove that lines AL and HQ intersect at a point lying on the circumcircle of triangle AEF.
+
+67: Given a circle (O) with diameter CD. The tangent at point C is the line Cx. Let E be a point on the circle (O) (E ≠ C, D). Through O, draw a line perpendicular to CE, intersecting Cx at point A.
+a) Prove that AE is a tangent to the circle (O).
+b) Draw the tangent to the circle (O) at point D. This tangent intersects AE at point B. Prove that:
+- AC + BD = AB
+- Triangle AOB is right-angled at O
+c) Draw EH ⟂ CD at point H. Prove that lines AD and BC intersect at the midpoint of EH.

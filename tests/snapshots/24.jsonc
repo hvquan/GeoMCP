@@ -1,0 +1,38 @@
+// input: "24: Cho đường tròn (O) có đường kính CD. Lấy điểm E thuộc đường tròn (O) (E ≠ C, D)."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "segment",
+      "points": [
+        "C",
+        "D"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "E"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "C",
+        "D"
+      ]
+    },
+    {
+      "type": "on_circle",
+      "point": "E",
+      "circle": "O"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

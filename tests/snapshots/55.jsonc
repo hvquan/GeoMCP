@@ -1,0 +1,43 @@
+// input: "55: Cho hình thang cân ABCD nội tiếp đường tròn (O)."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "trapezoid",
+      "points": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "D",
+      "circle": "O"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

@@ -1,0 +1,17 @@
+// input: "07: Given triangle ABC."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    }
+  ],
+  "constraints": [],
+  "constructions": [],
+  "targets": []
+}

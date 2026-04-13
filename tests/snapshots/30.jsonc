@@ -1,0 +1,29 @@
+// input: "30: Given circle (O) with diameter CD."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "segment",
+      "points": [
+        "C",
+        "D"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "C",
+        "D"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

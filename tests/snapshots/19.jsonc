@@ -1,0 +1,66 @@
+// input: "19: Given triangle ABC. The angle bisectors AD, BE, CF intersect at I."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "D"
+    },
+    {
+      "type": "point",
+      "name": "E"
+    },
+    {
+      "type": "point",
+      "name": "F"
+    },
+    {
+      "type": "point",
+      "name": "I"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "bisector",
+      "line1": "AD",
+      "line2": "BC"
+    },
+    {
+      "type": "bisector",
+      "line1": "BE",
+      "line2": "AC"
+    },
+    {
+      "type": "bisector",
+      "line1": "CF",
+      "line2": "AB"
+    },
+    {
+      "type": "intersection",
+      "point": "I",
+      "of": [
+        "AD",
+        "BE"
+      ]
+    }
+  ],
+  "constructions": [
+    {
+      "type": "intersection",
+      "point": "I",
+      "of": [
+        "BE",
+        "CF"
+      ]
+    }
+  ],
+  "targets": []
+}

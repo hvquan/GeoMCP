@@ -1,0 +1,99 @@
+// input: "63: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O). The altitudes AD, BE, CF intersect at H."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "K"
+    },
+    {
+      "type": "segment",
+      "points": [
+        "A",
+        "D"
+      ]
+    },
+    {
+      "type": "segment",
+      "points": [
+        "B",
+        "E"
+      ]
+    },
+    {
+      "type": "segment",
+      "points": [
+        "C",
+        "F"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "H"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    },
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "A",
+        "K"
+      ]
+    },
+    {
+      "type": "perpendicular",
+      "line1": "AD",
+      "line2": "BC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "BE",
+      "line2": "AC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "CF",
+      "line2": "AB"
+    }
+  ],
+  "constructions": [],
+  "targets": [
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "AD",
+        "BE",
+        "CF"
+      ]
+    }
+  ]
+}

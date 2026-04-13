@@ -1,0 +1,23 @@
+// input: "27: Given circle (O) and point A on circle (O)."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "point",
+      "name": "A"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

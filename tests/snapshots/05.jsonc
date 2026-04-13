@@ -1,0 +1,16 @@
+// input: "05: Given line d and point M not on line d."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "line",
+      "name": "d"
+    },
+    {
+      "type": "point",
+      "name": "M"
+    }
+  ],
+  "constraints": [],
+  "constructions": []
+}

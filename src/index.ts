@@ -6,12 +6,9 @@ import {
   Tool
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { parseGeometryProblem } from "./parser.js";
-import { parseGeometryProblemWithLLM } from "./llmParser.js";
-import { buildLayout } from "./layout.js";
-import { enrichModelForV2 } from "./v2Model.js";
-import { refineLayoutWithSolver } from "./solver.js";
-import { renderSvg } from "./svg.js";
+import { parseGeometryProblem } from "./parsing/index.js";
+import { buildLayout, renderSvg } from "./geometry/index.js";
+import { runGeometryPipeline } from "./pipeline/index.js";
 
 const TOOL_NAME = "read_and_draw_geometry";
 const TOOL_NAME_V2 = "read_and_draw_geometry_v2_llm";
@@ -130,35 +127,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     );
 
     let parsed;
-    let parserVersion = "v2-llm";
+    let parserVersion = "v2-llm-dsl";
     let warnings: string[] = [];
+    let canonical;
 
-    try {
-      parsed = await parseGeometryProblemWithLLM(problem, { model: llmModel });
-    } catch (error) {
-      if (!fallbackToHeuristic) {
-        throw error;
-      }
-      parsed = parseGeometryProblem(problem);
-      parserVersion = "v2-fallback-v1";
-      warnings = [
-        `LLM parser failed, fallback to heuristic parser: ${error instanceof Error ? error.message : String(error)}`
-      ];
-    }
-
-    const enriched = enrichModelForV2(parsed);
-    const baseLayout = buildLayout(enriched);
-    const layout = useConstraintSolver
-      ? refineLayoutWithSolver(enriched, baseLayout, { iterations: solverIterations })
-      : baseLayout;
-    const svg = renderSvg(layout);
+    const pipelineResult = await runGeometryPipeline(problem, {
+      model: llmModel,
+      solverIterations,
+      fallbackToHeuristic,
+      useConstraintSolver
+    });
+    parsed = pipelineResult.parsed;
+    canonical = pipelineResult.canonical;
+    parserVersion = pipelineResult.parserVersion;
+    warnings = pipelineResult.warnings;
+    const layout = pipelineResult.layout;
+    const svg = pipelineResult.svg;
     result = {
       parserVersion,
       solver: useConstraintSolver
         ? { enabled: true, iterations: solverIterations }
         : { enabled: false },
       warnings,
-      parsed: enriched,
+      canonical: canonical ?? undefined,
+      parsed,
       layout,
       svg
     };

@@ -1,0 +1,57 @@
+// input: "46: Given acute triangle ABC inscribed in circle (O). Let H be the orthocenter of triangle ABC."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "H"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    }
+  ],
+  "constructions": [
+    {
+      "type": "perpendicular",
+      "line1": "AH",
+      "line2": "BC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "BH",
+      "line2": "AC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "CH",
+      "line2": "AB"
+    }
+  ],
+  "targets": []
+}

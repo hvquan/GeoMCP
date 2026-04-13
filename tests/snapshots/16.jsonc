@@ -1,0 +1,61 @@
+// input: "16: Given triangle ABC. Let H be the intersection of the three altitudes of the triangle."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "H"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "AH",
+        "BC"
+      ]
+    },
+    {
+      "type": "perpendicular",
+      "line1": "AH",
+      "line2": "BC"
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "BH",
+        "AC"
+      ]
+    },
+    {
+      "type": "perpendicular",
+      "line1": "BH",
+      "line2": "AC"
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "CH",
+        "AB"
+      ]
+    },
+    {
+      "type": "perpendicular",
+      "line1": "CH",
+      "line2": "AB"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

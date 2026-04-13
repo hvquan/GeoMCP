@@ -1,0 +1,18 @@
+// input: "50: Given rectangle ABCD."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "rectangle",
+      "points": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    }
+  ],
+  "constraints": [],
+  "constructions": [],
+  "targets": []
+}

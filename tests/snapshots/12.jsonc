@@ -1,0 +1,39 @@
+// input: "12: Given triangle ABC with median AM and altitude AH."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "M"
+    },
+    {
+      "type": "point",
+      "name": "H"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "midpoint",
+      "point": "M",
+      "of": [
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "perpendicular",
+      "line1": "AH",
+      "line2": "BC"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

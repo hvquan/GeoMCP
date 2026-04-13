@@ -1,0 +1,63 @@
+// input: "57: Given acute triangle ABC. The altitudes AD, BE, CF intersect at H. Prove that the points D, E, F lie on a common circle."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "D"
+    },
+    {
+      "type": "point",
+      "name": "E"
+    },
+    {
+      "type": "point",
+      "name": "F"
+    },
+    {
+      "type": "point",
+      "name": "H"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "altitude",
+      "line1": "AD",
+      "line2": "BC"
+    },
+    {
+      "type": "altitude",
+      "line1": "BE",
+      "line2": "AC"
+    },
+    {
+      "type": "altitude",
+      "line1": "CF",
+      "line2": "AB"
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "AD",
+        "BE",
+        "CF"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": [
+    {
+      "type": "statement",
+      "text": "Prove that D, E, F lie on a common circle."
+    }
+  ]
+}

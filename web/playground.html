@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoMCP Local Geometry Playground</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --panel: rgba(255, 251, 245, 0.94);
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --accent: #0f766e;
+      --accent-2: #1d4ed8;
+      --line: #d6d3d1;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "IBM Plex Sans", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top left, #fff7ed 0, transparent 32%),
+        radial-gradient(circle at bottom right, #dbeafe 0, transparent 34%),
+        linear-gradient(135deg, var(--bg), #eef6f9);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      padding: 16px;
+      min-height: 100vh;
+    }
+
+    .panel, .stage {
+      background: var(--panel);
+      border: 1px solid #e7dfd4;
+      border-radius: 20px;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+    }
+
+    .panel {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: auto;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: 24px;
+      line-height: 1.1;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .chips, .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip, button, input[type="range"] {
+      border-radius: 999px;
+    }
+
+    .chip {
+      padding: 5px 10px;
+      background: #e0f2fe;
+      color: #1e40af;
+      font-size: 12px;
+      border: 1px solid #bfdbfe;
+    }
+
+    button {
+      border: none;
+      background: linear-gradient(90deg, #0f766e, #2563eb);
+      color: #fff;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #e7e5e4;
+      color: #1f2937;
+    }
+
+    .section {
+      border-top: 1px solid #ece7df;
+      padding-top: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .list {
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+    }
+
+    .list-item {
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid #ebe3d5;
+      border-radius: 14px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .stage {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-height: calc(100vh - 32px);
+    }
+
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background:
+        linear-gradient(0deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+        linear-gradient(180deg, #fffefc, #f8fbff);
+      background-size: 32px 32px, 32px 32px, auto;
+      cursor: grab;
+    }
+
+    svg.dragging-point {
+      cursor: grabbing;
+    }
+
+    .footer {
+      padding: 12px 16px;
+      border-top: 1px solid #ece7df;
+      display: grid;
+      gap: 10px;
+      background: rgba(255,255,255,0.7);
+    }
+
+    .log {
+      max-height: 170px;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .log-item {
+      border: 1px solid #dbe3ee;
+      border-radius: 12px;
+      padding: 9px 10px;
+      background: #f8fbff;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .control-row {
+      display: grid;
+      gap: 6px;
+    }
+
+    .control-row input[type="range"] {
+      width: 100%;
+    }
+
+    .value {
+      color: #0f766e;
+      font-weight: 700;
+    }
+
+    @media (max-width: 980px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .stage {
+        min-height: 68vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <div>
+        <h1>Local Geometry Playground</h1>
+        <p class="sub">
+          Local-first geometry toolkit for dependency-driven drawing. Drag free points, pan the stage,
+          and inspect which objects update layer by layer.
+        </p>
+      </div>
+
+      <div class="chips">
+        <span class="chip">Local only</span>
+        <span class="chip">Dependency graph</span>
+        <span class="chip">Layer propagation</span>
+      </div>
+
+      <div class="toolbar">
+        <button id="resetScene">Reset scene</button>
+        <button id="fitView" class="secondary">Fit view</button>
+      </div>
+
+      <div class="section">
+        <div class="label">Supported Objects</div>
+        <div class="list" id="supportedList"></div>
+      </div>
+
+      <div class="section">
+        <div class="label">Scalar Controls</div>
+        <div class="control-row">
+          <label for="radiusScalar">Circle by radius: <span class="value" id="radiusValue"></span></label>
+          <input id="radiusScalar" type="range" min="30" max="170" step="1" />
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="label">Scene Notes</div>
+        <div class="list" id="sceneNotes"></div>
+      </div>
+    </aside>
+
+    <section class="stage">
+      <svg id="canvas" viewBox="0 0 900 620" aria-label="geometry playground"></svg>
+      <div class="footer">
+        <div class="legend">
+          <span><span class="swatch" style="background:#0f766e"></span>Free points</span>
+          <span><span class="swatch" style="background:#c2410c"></span>Derived points</span>
+          <span><span class="swatch" style="background:#2563eb"></span>Lines / rays</span>
+          <span><span class="swatch" style="background:#475569"></span>Segments / circles</span>
+        </div>
+        <div class="log" id="layerLog"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const EPS = 1e-6;
+    const POINT_EPS = 1e-3;
+
+    const supportedObjects = [
+      "1. Mouse drag for free points + viewport pan",
+      "2. Point",
+      "3. Segment",
+      "4. Line",
+      "5. Ray",
+      "6. Circle(center, point)",
+      "7. Circle(center, radius scalar)",
+      "8. Diameter through point on circle",
+      "9. Tangent at point on circle",
+      "10. Tangent from point outside circle",
+      "11. Midpoint of a segment",
+      "12. Perpendicular line through a point",
+      "13. Parallel line through a point",
+      "14. Intersection point of segment/line/ray",
+      "15. Triangle through three points",
+      "16. Median, angle bisector, altitude",
+      "17. Centroid and orthocenter",
+      "18. Reflection of a point across a line",
+      "19. Equilateral triangle through two points",
+      "20. Right triangle at a point",
+      "21. Circumcircle and incircle of a triangle",
+      "22. Square, rectangle, rhombus, parallelogram",
+      "23. Trapezoid (one pair parallel) and generic trapezoid"
+    ];
+
+    const sceneNotes = [
+      "Drag O or C to test circle(center, point), point-on-circle dependency, diameter, tangent-at-point, and intersection updates.",
+      "Drag A, B, or P to test segment, line, midpoint, triangle, median, altitude, bisector, centroid, orthocenter, and triangle circles.",
+      "Use the radius slider to test circle(center, radius) dependencies without any LLM in the loop.",
+      "Drag F/G/U/V/W/R0/R1/Z* to test reflection, equilateral, right triangle, square, rectangle, rhombus, parallelogram, trapezoids.",
+      "The log below the canvas shows propagation layers: direct dependents first, then next layers."
+    ];
+
+    const sceneTemplate = {
+      viewBox: { x: 0, y: 0, width: 900, height: 620 },
+      points: [
+        { id: "O", label: "O", x: 250, y: 280, free: true },
+        { id: "C", label: "C", x: 430, y: 280, free: true },
+        { id: "A", label: "A", x: 540, y: 430, free: true },
+        { id: "B", label: "B", x: 760, y: 450, free: true },
+        { id: "P", label: "P", x: 690, y: 170, free: true },
+        { id: "S", label: "S", x: 120, y: 120, free: true },
+        { id: "F", label: "F", x: 120, y: 520, free: true },
+        { id: "G", label: "G", x: 290, y: 520, free: true },
+        { id: "R0", label: "R0", x: 770, y: 100, free: true },
+        { id: "R1", label: "R1", x: 850, y: 120, free: true },
+        { id: "U", label: "U", x: 450, y: 520, free: true },
+        { id: "V", label: "V", x: 560, y: 520, free: true },
+        { id: "W", label: "W", x: 520, y: 590, free: true },
+        { id: "Z1", label: "Z1", x: 300, y: 90, free: true },
+        { id: "Z2", label: "Z2", x: 380, y: 80, free: true },
+        { id: "Z3", label: "Z3", x: 410, y: 150, free: true },
+        { id: "Z4", label: "Z4", x: 310, y: 170, free: true }
+      ],
+      scalars: [
+        { id: "r1", label: "r1", value: 92 },
+        { id: "rectH", label: "rectH", value: 70 },
+        { id: "rhAng", label: "rhAng", value: 52 },
+        { id: "trapK", label: "trapK", value: 0.62 }
+      ],
+      nodes: [
+        { id: "circleMain", type: "circleCenterPoint", centerPointId: "O", pointId: "C" },
+        { id: "E", type: "pointOnCircle", circleId: "circleMain", angleDeg: -58, label: "E" },
+        { id: "diameterCD", type: "diameterThroughPoint", circleId: "circleMain", pointId: "C", oppositePointId: "D", label: "D" },
+        { id: "tangentAtC", type: "tangentAtPoint", circleId: "circleMain", pointId: "C" },
+        { id: "tangentFromP", type: "tangentFromExternalPoint", circleId: "circleMain", pointId: "P", tangentPointId: "T", branch: 1, label: "T" },
+        { id: "segmentAB", type: "segment", point1Id: "A", point2Id: "B" },
+        { id: "lineAB", type: "lineFromPoints", point1Id: "A", point2Id: "B" },
+        { id: "rayAP", type: "rayFromPoints", point1Id: "A", point2Id: "P" },
+        { id: "midAB", type: "midpoint", point1Id: "A", point2Id: "B", outputPointId: "M", label: "M" },
+        { id: "perpAtE", type: "perpendicularLine", pointId: "E", referenceId: "lineAB" },
+        { id: "parallelAtC", type: "parallelLine", pointId: "C", referenceId: "lineAB" },
+        { id: "X", type: "intersectionPoint", object1Id: "tangentAtC", object2Id: "perpAtE", label: "X" },
+        { id: "triangleABP", type: "triangle", pointIds: ["A", "B", "P"] },
+        { id: "medianP", type: "median", vertexId: "P", sidePoint1Id: "A", sidePoint2Id: "B", footPointId: "N", label: "N" },
+        { id: "bisectorP", type: "angleBisector", vertexId: "P", point1Id: "A", point2Id: "B" },
+        { id: "K", type: "intersectionPoint", object1Id: "bisectorP", object2Id: "segmentAB", label: "K" },
+        { id: "altitudeP", type: "altitude", vertexId: "P", sidePoint1Id: "A", sidePoint2Id: "B", footPointId: "Hf", label: "Hf" },
+        { id: "centroidABP", type: "centroid", pointIds: ["A", "B", "P"], outputPointId: "Gt", label: "Gt" },
+        { id: "orthocenterABP", type: "orthocenter", pointIds: ["A", "B", "P"], outputPointId: "H", label: "H" },
+        { id: "circumABP", type: "circumcircleOfTriangle", pointIds: ["A", "B", "P"] },
+        { id: "incircleABP", type: "incircleOfTriangle", pointIds: ["A", "B", "P"] },
+        { id: "symPLineAB", type: "symmetricPointByLine", pointId: "P", lineId: "lineAB", outputPointId: "Ps", label: "Ps" },
+        { id: "equiFG", type: "equilateralTriangleFromTwoPoints", point1Id: "F", point2Id: "G", outputPointId: "Eq", label: "Eq", branch: 1 },
+        { id: "rightAtR0", type: "rightTriangleAtPoint", rightAtPointId: "R0", pointOnLegId: "R1", outputPointId: "R2", label: "R2", scale: 1 },
+        { id: "squareUV", type: "squareFromTwoPoints", point1Id: "U", point2Id: "V", outputPoint3Id: "Sq3", outputPoint4Id: "Sq4", label3: "Sq3", label4: "Sq4", branch: 1 },
+        { id: "rectFG", type: "rectangleFromTwoPoints", point1Id: "F", point2Id: "G", heightScalarId: "rectH", outputPoint3Id: "Rc3", outputPoint4Id: "Rc4", label3: "Rc3", label4: "Rc4" },
+        { id: "rhombusUV", type: "rhombusFromTwoPoints", point1Id: "U", point2Id: "V", angleScalarId: "rhAng", outputPoint3Id: "Rh3", outputPoint4Id: "Rh4", label3: "Rh3", label4: "Rh4" },
+        { id: "parallelogramAPC", type: "parallelogramFromThreePoints", pointAId: "A", pointBId: "P", pointDId: "C", outputPointCId: "PaC", label: "PaC" },
+        { id: "trapParallel", type: "trapezoidWithParallelSides", pointAId: "U", pointBId: "V", pointCId: "W", ratioScalarId: "trapK", outputPointDId: "TrD", label: "TrD" },
+        { id: "trapGeneric", type: "trapezoidGeneric", pointIds: ["Z1", "Z2", "Z3", "Z4"] },
+        { id: "circleRadius", type: "circleCenterRadius", centerPointId: "S", radiusScalarId: "r1" }
+      ]
+    };
+
+    const svg = document.getElementById("canvas");
+    const layerLog = document.getElementById("layerLog");
+    const supportedList = document.getElementById("supportedList");
+    const sceneNotesEl = document.getElementById("sceneNotes");
+    const radiusSlider = document.getElementById("radiusScalar");
+    const radiusValue = document.getElementById("radiusValue");
+    const resetButton = document.getElementById("resetScene");
+    const fitButton = document.getElementById("fitView");
+
+    let state;
+    let dragState = null;
+    let panState = null;
+
+    function cloneSceneTemplate() {
+      return JSON.parse(JSON.stringify(sceneTemplate));
+    }
+
+    function vec(x, y) { return { x, y }; }
+    function add(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
+    function sub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
+    function scale(a, k) { return { x: a.x * k, y: a.y * k }; }
+    function dot(a, b) { return a.x * b.x + a.y * b.y; }
+    function len(a) { return Math.hypot(a.x, a.y); }
+    function dist(a, b) { return len(sub(a, b)); }
+    function norm(a) {
+      const l = len(a) || 1;
+      return { x: a.x / l, y: a.y / l };
+    }
+    function rotate(a, rad) {
+      const c = Math.cos(rad);
+      const s = Math.sin(rad);
+      return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
+    }
+    function perp(a) { return { x: -a.y, y: a.x }; }
+    function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+    function samePoint(a, b) { return a && b && dist(a, b) < POINT_EPS; }
+
+    function lineSupport(origin, direction, kind, minT = -Infinity, maxT = Infinity) {
+      return { origin, direction, kind, minT, maxT };
+    }
+
+    function pointToScreen(evt) {
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX;
+      pt.y = evt.clientY;
+      const ctm = svg.getScreenCTM();
+      return ctm ? pt.matrixTransform(ctm.inverse()) : { x: 0, y: 0 };
+    }
+
+    function clipLineToViewBox(origin, direction, viewBox, isRay) {
+      const edges = [];
+      const minX = viewBox.x;
+      const maxX = viewBox.x + viewBox.width;
+      const minY = viewBox.y;
+      const maxY = viewBox.y + viewBox.height;
+
+      function push(t) {
+        if (!Number.isFinite(t)) return;
+        if (isRay && t < 0) return;
+        const x = origin.x + direction.x * t;
+        const y = origin.y + direction.y * t;
+        if (x < minX - 1 || x > maxX + 1 || y < minY - 1 || y > maxY + 1) return;
+        edges.push({ x, y, t });
+      }
+
+      if (Math.abs(direction.x) > EPS) {
+        push((minX - origin.x) / direction.x);
+        push((maxX - origin.x) / direction.x);
+      }
+      if (Math.abs(direction.y) > EPS) {
+        push((minY - origin.y) / direction.y);
+        push((maxY - origin.y) / direction.y);
+      }
+
+      const filtered = edges.filter((p, idx) => edges.findIndex((q) => Math.abs(q.x - p.x) < 0.5 && Math.abs(q.y - p.y) < 0.5) === idx);
+      filtered.sort((a, b) => a.t - b.t);
+      if (filtered.length < 2) return null;
+      return [filtered[0], filtered[filtered.length - 1]];
+    }
+
+    function supportIntersection(a, b) {
+      const ax = a.origin.x;
+      const ay = a.origin.y;
+      const bx = b.origin.x;
+      const by = b.origin.y;
+      const avx = a.direction.x;
+      const avy = a.direction.y;
+      const bvx = b.direction.x;
+      const bvy = b.direction.y;
+      const den = avx * bvy - avy * bvx;
+      if (Math.abs(den) < EPS) return null;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const ta = (dx * bvy - dy * bvx) / den;
+      const tb = (dx * avy - dy * avx) / den;
+      if (ta < a.minT - EPS || ta > a.maxT + EPS) return null;
+      if (tb < b.minT - EPS || tb > b.maxT + EPS) return null;
+      return { x: ax + avx * ta, y: ay + avy * ta };
+    }
+
+    function projectPointOnInfiniteLine(point, origin, direction) {
+      const den = dot(direction, direction) || 1;
+      const t = dot(sub(point, origin), direction) / den;
+      return add(origin, scale(direction, t));
+    }
+
+    function distancePointToLine(point, origin, direction) {
+      const proj = projectPointOnInfiniteLine(point, origin, direction);
+      return dist(point, proj);
+    }
+
+    function circumcenter(a, b, c) {
+      const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+      if (Math.abs(d) < EPS) {
+        return null;
+      }
+      const a2 = a.x * a.x + a.y * a.y;
+      const b2 = b.x * b.x + b.y * b.y;
+      const c2 = c.x * c.x + c.y * c.y;
+      return {
+        x: (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d,
+        y: (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d
+      };
+    }
+
+    function arcPath(center, radius, fromPoint, toPoint) {
+      const a1 = Math.atan2(fromPoint.y - center.y, fromPoint.x - center.x);
+      const a2 = Math.atan2(toPoint.y - center.y, toPoint.x - center.x);
+      let delta = a2 - a1;
+      while (delta <= -Math.PI) delta += Math.PI * 2;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      const endAngle = a1 + delta;
+      const start = { x: center.x + Math.cos(a1) * radius, y: center.y + Math.sin(a1) * radius };
+      const end = { x: center.x + Math.cos(endAngle) * radius, y: center.y + Math.sin(endAngle) * radius };
+      const largeArc = Math.abs(delta) > Math.PI ? 1 : 0;
+      const sweep = delta >= 0 ? 1 : 0;
+      return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} ${sweep} ${end.x} ${end.y}`;
+    }
+
+    function renderSpan() {
+      return Math.hypot(state.viewBox.width, state.viewBox.height) * 3;
+    }
+
+    function snapshotEntity(entityId) {
+      if (state.points.has(entityId)) {
+        const p = state.points.get(entityId);
+        return `${entityId}:${p.x.toFixed(3)}:${p.y.toFixed(3)}`;
+      }
+      if (state.scalars.has(entityId)) {
+        const s = state.scalars.get(entityId);
+        return `${entityId}:${Number(s.value).toFixed(3)}`;
+      }
+      if (state.objects.has(entityId)) {
+        const obj = state.objects.get(entityId);
+        return JSON.stringify(obj);
+      }
+      return `${entityId}:missing`;
+    }
+
+    function updatePoint(id, point, meta = {}) {
+      const prev = state.points.get(id);
+      const next = {
+        id,
+        label: meta.label || prev?.label || id,
+        free: Boolean(meta.free ?? prev?.free ?? false),
+        x: point.x,
+        y: point.y
+      };
+      state.points.set(id, next);
+      return !prev || !samePoint(prev, next);
+    }
+
+    function updateObject(id, value) {
+      const prev = state.objects.get(id);
+      const next = JSON.parse(JSON.stringify(value));
+      state.objects.set(id, next);
+      return JSON.stringify(prev) !== JSON.stringify(next);
+    }
+
+    function getPoint(id) {
+      const p = state.points.get(id);
+      return p ? { x: p.x, y: p.y } : null;
+    }
+
+    function getCircle(id) {
+      return state.objects.get(id);
+    }
+
+    function getScalar(id) {
+      const s = state.scalars.get(id);
+      return s ? Number(s.value) : 0;
+    }
+
+    function supportForObject(id) {
+      const obj = state.objects.get(id);
+      if (!obj) return null;
+      if (obj.kind === "segment") {
+        return lineSupport(obj.p1, sub(obj.p2, obj.p1), "segment", 0, 1);
+      }
+      if (obj.kind === "line") {
+        return lineSupport(obj.point, obj.direction, "line");
+      }
+      if (obj.kind === "ray") {
+        return lineSupport(obj.origin, obj.direction, "ray", 0, Infinity);
+      }
+      return null;
+    }
+
+    function registerComputedNode(node) {
+      const handlers = {
+        circleCenterPoint() {
+          return {
+            deps: [node.centerPointId, node.pointId],
+            outputs: [node.id],
+            compute() {
+              const center = getPoint(node.centerPointId);
+              const point = getPoint(node.pointId);
+              if (!center || !point) return [];
+              const radius = dist(center, point);
+              return updateObject(node.id, { kind: "circle", center, radius }) ? [node.id] : [];
+            }
+          };
+        },
+        circleCenterRadius() {
+          return {
+            deps: [node.centerPointId, node.radiusScalarId],
+            outputs: [node.id],
+            compute() {
+              const center = getPoint(node.centerPointId);
+              if (!center) return [];
+              const radius = getScalar(node.radiusScalarId);
+              return updateObject(node.id, { kind: "circle", center, radius }) ? [node.id] : [];
+            }
+          };
+        },
+        pointOnCircle() {
+          return {
+            deps: [node.circleId],
+            outputs: [node.id],
+            compute() {
+              const circle = getCircle(node.circleId);
+              if (!circle) return [];
+              const angle = (node.angleDeg * Math.PI) / 180;
+              const point = {
+                x: circle.center.x + Math.cos(angle) * circle.radius,
+                y: circle.center.y + Math.sin(angle) * circle.radius
+              };
+              return updatePoint(node.id, point, { label: node.label, free: false }) ? [node.id] : [];
+            }
+          };
+        },
+        diameterThroughPoint() {
+          return {
+            deps: [node.circleId, node.pointId],
+            outputs: [node.id, node.oppositePointId],
+            compute() {
+              const circle = getCircle(node.circleId);
+              const point = getPoint(node.pointId);
+              if (!circle || !point) return [];
+              const opposite = {
+                x: 2 * circle.center.x - point.x,
+                y: 2 * circle.center.y - point.y
+              };
+              const changed = [];
+              if (updatePoint(node.oppositePointId, opposite, { label: node.label, free: false })) {
+                changed.push(node.oppositePointId);
+              }
+              if (updateObject(node.id, { kind: "segment", p1: point, p2: opposite })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        tangentAtPoint() {
+          return {
+            deps: [node.circleId, node.pointId],
+            outputs: [node.id],
+            compute() {
+              const circle = getCircle(node.circleId);
+              const point = getPoint(node.pointId);
+              if (!circle || !point) return [];
+              const direction = perp(norm(sub(point, circle.center)));
+              return updateObject(node.id, { kind: "line", point, direction }) ? [node.id] : [];
+            }
+          };
+        },
+        tangentFromExternalPoint() {
+          return {
+            deps: [node.circleId, node.pointId],
+            outputs: [node.id, node.tangentPointId],
+            compute() {
+              const circle = getCircle(node.circleId);
+              const ext = getPoint(node.pointId);
+              if (!circle || !ext) return [];
+              const dx = ext.x - circle.center.x;
+              const dy = ext.y - circle.center.y;
+              const d2 = dx * dx + dy * dy;
+              if (d2 <= circle.radius * circle.radius + EPS) return [];
+              const root = Math.sqrt(d2 - circle.radius * circle.radius);
+              const sign = node.branch === -1 ? -1 : 1;
+              const tx = circle.center.x + (circle.radius * circle.radius * dx - sign * circle.radius * dy * root) / d2;
+              const ty = circle.center.y + (circle.radius * circle.radius * dy + sign * circle.radius * dx * root) / d2;
+              const tangentPoint = { x: tx, y: ty };
+              const changed = [];
+              if (updatePoint(node.tangentPointId, tangentPoint, { label: node.label, free: false })) {
+                changed.push(node.tangentPointId);
+              }
+              if (updateObject(node.id, { kind: "line", point: ext, direction: sub(tangentPoint, ext) })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        segment() {
+          return {
+            deps: [node.point1Id, node.point2Id],
+            outputs: [node.id],
+            compute() {
+              const p1 = getPoint(node.point1Id);
+              const p2 = getPoint(node.point2Id);
+              if (!p1 || !p2) return [];
+              return updateObject(node.id, { kind: "segment", p1, p2 }) ? [node.id] : [];
+            }
+          };
+        },
+        lineFromPoints() {
+          return {
+            deps: [node.point1Id, node.point2Id],
+            outputs: [node.id],
+            compute() {
+              const p1 = getPoint(node.point1Id);
+              const p2 = getPoint(node.point2Id);
+              if (!p1 || !p2) return [];
+              return updateObject(node.id, { kind: "line", point: p1, direction: sub(p2, p1) }) ? [node.id] : [];
+            }
+          };
+        },
+        rayFromPoints() {
+          return {
+            deps: [node.point1Id, node.point2Id],
+            outputs: [node.id],
+            compute() {
+              const p1 = getPoint(node.point1Id);
+              const p2 = getPoint(node.point2Id);
+              if (!p1 || !p2) return [];
+              return updateObject(node.id, { kind: "ray", origin: p1, direction: sub(p2, p1) }) ? [node.id] : [];
+            }
+          };
+        },
+        midpoint() {
+          console.log("registering midpoint node", node);
+          return {
+            deps: [node.point1Id, node.point2Id],
+            outputs: [node.outputPointId],
+            compute() {
+              const p1 = getPoint(node.point1Id);
+              const p2 = getPoint(node.point2Id);
+              if (!p1 || !p2) return [];
+              return updatePoint(node.outputPointId, mid(p1, p2), { label: node.label, free: false }) ? [node.outputPointId] : [];
+            }
+          };
+        },
+        perpendicularLine() {
+          return {
+            deps: [node.pointId, node.referenceId],
+            outputs: [node.id],
+            compute() {
+              const p = getPoint(node.pointId);
+              const ref = supportForObject(node.referenceId);
+              if (!p || !ref) return [];
+              return updateObject(node.id, { kind: "line", point: p, direction: perp(ref.direction) }) ? [node.id] : [];
+            }
+          };
+        },
+        parallelLine() {
+          return {
+            deps: [node.pointId, node.referenceId],
+            outputs: [node.id],
+            compute() {
+              const p = getPoint(node.pointId);
+              const ref = supportForObject(node.referenceId);
+              if (!p || !ref) return [];
+              return updateObject(node.id, { kind: "line", point: p, direction: ref.direction }) ? [node.id] : [];
+            }
+          };
+        },
+        intersectionPoint() {
+          return {
+            deps: [node.object1Id, node.object2Id],
+            outputs: [node.id],
+            compute() {
+              const a = supportForObject(node.object1Id);
+              const b = supportForObject(node.object2Id);
+              if (!a || !b) return [];
+              const hit = supportIntersection(a, b);
+              if (!hit) return [];
+              return updatePoint(node.id, hit, { label: node.label, free: false }) ? [node.id] : [];
+            }
+          };
+        },
+        symmetricPointByLine() {
+          return {
+            deps: [node.pointId, node.lineId],
+            outputs: [node.outputPointId],
+            compute() {
+              const p = getPoint(node.pointId);
+              const line = supportForObject(node.lineId);
+              if (!p || !line) {
+                return [];
+              }
+              const proj = projectPointOnInfiniteLine(p, line.origin, line.direction);
+              const mirror = {
+                x: 2 * proj.x - p.x,
+                y: 2 * proj.y - p.y
+              };
+              return updatePoint(node.outputPointId, mirror, { label: node.label, free: false })
+                ? [node.outputPointId]
+                : [];
+            }
+          };
+        },
+        equilateralTriangleFromTwoPoints() {
+          return {
+            deps: [node.point1Id, node.point2Id],
+            outputs: [node.outputPointId, node.id],
+            compute() {
+              const a = getPoint(node.point1Id);
+              const b = getPoint(node.point2Id);
+              if (!a || !b) {
+                return [];
+              }
+              const v = sub(b, a);
+              const sign = node.branch === -1 ? -1 : 1;
+              const c = add(a, add(scale(v, 0.5), scale(perp(v), sign * Math.sqrt(3) / 2)));
+              const changed = [];
+              if (updatePoint(node.outputPointId, c, { label: node.label, free: false })) {
+                changed.push(node.outputPointId);
+              }
+              if (updateObject(node.id, { kind: "triangle", points: [a, b, c] })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        rightTriangleAtPoint() {
+          return {
+            deps: [node.rightAtPointId, node.pointOnLegId],
+            outputs: [node.outputPointId, node.id],
+            compute() {
+              const a = getPoint(node.rightAtPointId);
+              const b = getPoint(node.pointOnLegId);
+              if (!a || !b) {
+                return [];
+              }
+              const ab = sub(b, a);
+              const scaleFactor = Number(node.scale ?? 1);
+              const c = add(a, scale(norm(perp(ab)), len(ab) * scaleFactor));
+              const changed = [];
+              if (updatePoint(node.outputPointId, c, { label: node.label, free: false })) {
+                changed.push(node.outputPointId);
+              }
+              if (updateObject(node.id, { kind: "triangle", points: [a, b, c] })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        circumcircleOfTriangle() {
+          return {
+            deps: [...node.pointIds],
+            outputs: [node.id],
+            compute() {
+              const [a, b, c] = node.pointIds.map(getPoint);
+              if (!a || !b || !c) {
+                return [];
+              }
+              const center = circumcenter(a, b, c);
+              if (!center) {
+                return [];
+              }
+              const radius = dist(center, a);
+              return updateObject(node.id, { kind: "circle", center, radius }) ? [node.id] : [];
+            }
+          };
+        },
+        incircleOfTriangle() {
+          return {
+            deps: [...node.pointIds],
+            outputs: [node.id],
+            compute() {
+              const [a, b, c] = node.pointIds.map(getPoint);
+              if (!a || !b || !c) {
+                return [];
+              }
+              const la = dist(b, c);
+              const lb = dist(c, a);
+              const lc = dist(a, b);
+              const sum = la + lb + lc;
+              if (sum < EPS) {
+                return [];
+              }
+              const center = {
+                x: (la * a.x + lb * b.x + lc * c.x) / sum,
+                y: (la * a.y + lb * b.y + lc * c.y) / sum
+              };
+              const radius = distancePointToLine(center, a, sub(b, a));
+              return updateObject(node.id, { kind: "circle", center, radius }) ? [node.id] : [];
+            }
+          };
+        },
+        squareFromTwoPoints() {
+          return {
+            deps: [node.point1Id, node.point2Id],
+            outputs: [node.outputPoint3Id, node.outputPoint4Id, node.id],
+            compute() {
+              const a = getPoint(node.point1Id);
+              const b = getPoint(node.point2Id);
+              if (!a || !b) {
+                return [];
+              }
+              const v = sub(b, a);
+              const sign = node.branch === -1 ? -1 : 1;
+              const d = add(a, scale(perp(v), sign));
+              const c = add(b, scale(perp(v), sign));
+              const changed = [];
+              if (updatePoint(node.outputPoint3Id, c, { label: node.label3, free: false })) {
+                changed.push(node.outputPoint3Id);
+              }
+              if (updatePoint(node.outputPoint4Id, d, { label: node.label4, free: false })) {
+                changed.push(node.outputPoint4Id);
+              }
+              if (updateObject(node.id, { kind: "polygon", points: [a, b, c, d], polygonType: "square" })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        rectangleFromTwoPoints() {
+          return {
+            deps: [node.point1Id, node.point2Id, node.heightScalarId],
+            outputs: [node.outputPoint3Id, node.outputPoint4Id, node.id],
+            compute() {
+              const a = getPoint(node.point1Id);
+              const b = getPoint(node.point2Id);
+              if (!a || !b) {
+                return [];
+              }
+              const h = getScalar(node.heightScalarId);
+              const shift = scale(norm(perp(sub(b, a))), h);
+              const d = add(a, shift);
+              const c = add(b, shift);
+              const changed = [];
+              if (updatePoint(node.outputPoint3Id, c, { label: node.label3, free: false })) {
+                changed.push(node.outputPoint3Id);
+              }
+              if (updatePoint(node.outputPoint4Id, d, { label: node.label4, free: false })) {
+                changed.push(node.outputPoint4Id);
+              }
+              if (updateObject(node.id, { kind: "polygon", points: [a, b, c, d], polygonType: "rectangle" })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        rhombusFromTwoPoints() {
+          return {
+            deps: [node.point1Id, node.point2Id, node.angleScalarId],
+            outputs: [node.outputPoint3Id, node.outputPoint4Id, node.id],
+            compute() {
+              const a = getPoint(node.point1Id);
+              const b = getPoint(node.point2Id);
+              if (!a || !b) {
+                return [];
+              }
+              const angle = (getScalar(node.angleScalarId) * Math.PI) / 180;
+              const ab = sub(b, a);
+              const ad = scale(norm(rotate(ab, angle)), len(ab));
+              const d = add(a, ad);
+              const c = add(b, ad);
+              const changed = [];
+              if (updatePoint(node.outputPoint3Id, c, { label: node.label3, free: false })) {
+                changed.push(node.outputPoint3Id);
+              }
+              if (updatePoint(node.outputPoint4Id, d, { label: node.label4, free: false })) {
+                changed.push(node.outputPoint4Id);
+              }
+              if (updateObject(node.id, { kind: "polygon", points: [a, b, c, d], polygonType: "rhombus" })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        parallelogramFromThreePoints() {
+          return {
+            deps: [node.pointAId, node.pointBId, node.pointDId],
+            outputs: [node.outputPointCId, node.id],
+            compute() {
+              const a = getPoint(node.pointAId);
+              const b = getPoint(node.pointBId);
+              const d = getPoint(node.pointDId);
+              if (!a || !b || !d) {
+                return [];
+              }
+              const c = add(b, sub(d, a));
+              const changed = [];
+              if (updatePoint(node.outputPointCId, c, { label: node.label, free: false })) {
+                changed.push(node.outputPointCId);
+              }
+              if (updateObject(node.id, { kind: "polygon", points: [a, b, c, d], polygonType: "parallelogram" })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        trapezoidWithParallelSides() {
+          return {
+            deps: [node.pointAId, node.pointBId, node.pointCId, node.ratioScalarId],
+            outputs: [node.outputPointDId, node.id],
+            compute() {
+              const a = getPoint(node.pointAId);
+              const b = getPoint(node.pointBId);
+              const c = getPoint(node.pointCId);
+              if (!a || !b || !c) {
+                return [];
+              }
+              const ratio = getScalar(node.ratioScalarId);
+              const d = add(c, scale(sub(b, a), ratio));
+              const changed = [];
+              if (updatePoint(node.outputPointDId, d, { label: node.label, free: false })) {
+                changed.push(node.outputPointDId);
+              }
+              if (updateObject(node.id, { kind: "polygon", points: [a, b, d, c], polygonType: "trapezoidParallel" })) {
+                changed.push(node.id);
+              }
+              return changed;
+            }
+          };
+        },
+        trapezoidGeneric() {
+          return {
+            deps: [...node.pointIds],
+            outputs: [node.id],
+            compute() {
+              const pts = node.pointIds.map(getPoint);
+              if (pts.some((p) => !p)) {
+                return [];
+              }
+              return updateObject(node.id, { kind: "polygon", points: pts, polygonType: "trapezoidGeneric" })
+                ? [node.id]
+                : [];
+            }
+          };
+        },
+        triangle() {
+          return {
+            deps: [...node.pointIds],
+            outputs: [node.id],
+            compute() {
+              const pts = node.pointIds.map(getPoint);
+              if (pts.some((p) => !p)) return [];
+              return updateObject(node.id, { kind: "triangle", points: pts }) ? [node.id] : [];
+            }
+          };
+        },
+        median() {
+          return {
+            deps: [node.vertexId, node.sidePoint1Id, node.sidePoint2Id],
+            outputs: [node.id, node.footPointId],
+            compute() {
+              const v = getPoint(node.vertexId);
+              const a = getPoint(node.sidePoint1Id);
+              const b = getPoint(node.sidePoint2Id);
+              if (!v || !a || !b) return [];
+              const foot = mid(a, b);
+              const changed = [];
+              if (updatePoint(node.footPointId, foot, { label: node.label, free: false })) changed.push(node.footPointId);
+              if (updateObject(node.id, { kind: "segment", p1: v, p2: foot })) changed.push(node.id);
+              return changed;
+            }
+          };
+        },
+        angleBisector() {
+          return {
+            deps: [node.vertexId, node.point1Id, node.point2Id],
+            outputs: [node.id],
+            compute() {
+              const v = getPoint(node.vertexId);
+              const a = getPoint(node.point1Id);
+              const b = getPoint(node.point2Id);
+              if (!v || !a || !b) return [];
+              const d1 = norm(sub(a, v));
+              const d2 = norm(sub(b, v));
+              const dir = add(d1, d2);
+              if (len(dir) < EPS) return [];
+              return updateObject(node.id, { kind: "ray", origin: v, direction: dir }) ? [node.id] : [];
+            }
+          };
+        },
+        altitude() {
+          return {
+            deps: [node.vertexId, node.sidePoint1Id, node.sidePoint2Id],
+            outputs: [node.id, node.footPointId],
+            compute() {
+              const v = getPoint(node.vertexId);
+              const a = getPoint(node.sidePoint1Id);
+              const b = getPoint(node.sidePoint2Id);
+              if (!v || !a || !b) return [];
+              const ab = sub(b, a);
+              const t = ((v.x - a.x) * ab.x + (v.y - a.y) * ab.y) / ((ab.x * ab.x + ab.y * ab.y) || 1);
+              const foot = { x: a.x + ab.x * t, y: a.y + ab.y * t };
+              const changed = [];
+              if (updatePoint(node.footPointId, foot, { label: node.label, free: false })) changed.push(node.footPointId);
+              if (updateObject(node.id, { kind: "segment", p1: v, p2: foot })) changed.push(node.id);
+              return changed;
+            }
+          };
+        },
+        centroid() {
+          return {
+            deps: [...node.pointIds],
+            outputs: [node.outputPointId],
+            compute() {
+              const pts = node.pointIds.map(getPoint);
+              if (pts.some((p) => !p)) return [];
+              const point = {
+                x: (pts[0].x + pts[1].x + pts[2].x) / 3,
+                y: (pts[0].y + pts[1].y + pts[2].y) / 3
+              };
+              return updatePoint(node.outputPointId, point, { label: node.label, free: false }) ? [node.outputPointId] : [];
+            }
+          };
+        },
+        orthocenter() {
+          return {
+            deps: [...node.pointIds],
+            outputs: [node.outputPointId],
+            compute() {
+              const [a, b, c] = node.pointIds.map(getPoint);
+              if (!a || !b || !c) return [];
+              const altA = lineSupport(a, perp(sub(c, b)), "line");
+              const altB = lineSupport(b, perp(sub(c, a)), "line");
+              const point = supportIntersection(altA, altB);
+              if (!point) return [];
+              return updatePoint(node.outputPointId, point, { label: node.label, free: false }) ? [node.outputPointId] : [];
+            }
+          };
+        }
+      };
+
+      return handlers[node.type]();
+    }
+
+    function initState() {
+      const scene = cloneSceneTemplate();
+      const points = new Map();
+      for (const point of scene.points) {
+        points.set(point.id, { ...point });
+      }
+      const scalars = new Map();
+      for (const scalar of scene.scalars) {
+        scalars.set(scalar.id, { ...scalar });
+      }
+      state = {
+        scene,
+        points,
+        scalars,
+        objects: new Map(),
+        computedNodes: scene.nodes.map((node) => ({ node, runtime: registerComputedNode(node) })),
+        dependentsByEntity: new Map(),
+        viewBox: { ...scene.viewBox },
+        lastLayerInfo: []
+      };
+
+      for (const entry of state.computedNodes) {
+        for (const dep of entry.runtime.deps) {
+          if (!state.dependentsByEntity.has(dep)) {
+            state.dependentsByEntity.set(dep, []);
+          }
+          state.dependentsByEntity.get(dep).push(entry);
+        }
+      }
+    }
+
+    function propagateFrom(initialIds, reason) {
+      let frontier = new Set(initialIds);
+      const layers = [];
+      for (let layerIndex = 0; layerIndex < 24 && frontier.size; layerIndex += 1) {
+        const candidates = new Set();
+        for (const entityId of frontier) {
+          const dependents = state.dependentsByEntity.get(entityId) || [];
+          for (const entry of dependents) {
+            candidates.add(entry);
+          }
+        }
+        if (!candidates.size) break;
+        const next = new Set();
+        const triggered = [];
+        for (const entry of state.computedNodes) {
+          if (!candidates.has(entry)) continue;
+          const changedOutputs = entry.runtime.compute();
+          if (changedOutputs.length) {
+            triggered.push(`${entry.node.id} -> ${changedOutputs.join(", ")}`);
+            changedOutputs.forEach((id) => next.add(id));
+          }
+        }
+        if (!triggered.length) break;
+        layers.push({ layerIndex, frontier: [...frontier], triggered });
+        frontier = next;
+      }
+      state.lastLayerInfo = reason ? [{ layerIndex: -1, frontier: [reason], triggered: [] }, ...layers] : layers;
+      renderAll();
+    }
+
+    function renderAll() {
+      svg.setAttribute("viewBox", `${state.viewBox.x} ${state.viewBox.y} ${state.viewBox.width} ${state.viewBox.height}`);
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+      const layers = {
+        circles: document.createElementNS("http://www.w3.org/2000/svg", "g"),
+        polygons: document.createElementNS("http://www.w3.org/2000/svg", "g"),
+        lines: document.createElementNS("http://www.w3.org/2000/svg", "g"),
+        markers: document.createElementNS("http://www.w3.org/2000/svg", "g"),
+        points: document.createElementNS("http://www.w3.org/2000/svg", "g")
+      };
+
+      const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      bg.setAttribute("x", String(state.viewBox.x));
+      bg.setAttribute("y", String(state.viewBox.y));
+      bg.setAttribute("width", String(state.viewBox.width));
+      bg.setAttribute("height", String(state.viewBox.height));
+      bg.setAttribute("fill", "transparent");
+      bg.dataset.role = "pan-surface";
+      svg.appendChild(bg);
+
+      for (const [id, obj] of state.objects.entries()) {
+        if (obj.kind === "circle") {
+          const el = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          el.setAttribute("cx", String(obj.center.x));
+          el.setAttribute("cy", String(obj.center.y));
+          el.setAttribute("r", String(obj.radius));
+          el.setAttribute("fill", "none");
+          el.setAttribute("stroke", id === "circleRadius" ? "#64748b" : "#475569");
+          el.setAttribute("stroke-width", id === "circleRadius" ? "1.75" : "2.25");
+          el.setAttribute("stroke-dasharray", id === "circleRadius" ? "9 6" : "");
+          layers.circles.appendChild(el);
+        } else if (obj.kind === "triangle") {
+          const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+          poly.setAttribute("points", obj.points.map((p) => `${p.x},${p.y}`).join(" "));
+          poly.setAttribute("fill", "rgba(59, 130, 246, 0.08)");
+          poly.setAttribute("stroke", "#93c5fd");
+          poly.setAttribute("stroke-width", "1.5");
+          layers.polygons.appendChild(poly);
+        } else if (obj.kind === "polygon") {
+          const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+          poly.setAttribute("points", obj.points.map((p) => `${p.x},${p.y}`).join(" "));
+          const isTrap = String(obj.polygonType || "").startsWith("trapezoid");
+          const fill = isTrap ? "rgba(245, 158, 11, 0.08)" : "rgba(16, 185, 129, 0.08)";
+          const stroke = isTrap ? "#d97706" : "#0f766e";
+          poly.setAttribute("fill", fill);
+          poly.setAttribute("stroke", stroke);
+          poly.setAttribute("stroke-width", "1.6");
+          poly.setAttribute("stroke-dasharray", obj.polygonType === "trapezoidGeneric" ? "6 5" : "");
+          layers.polygons.appendChild(poly);
+        } else {
+          const lineEl = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          if (obj.kind === "segment") {
+            lineEl.setAttribute("x1", String(obj.p1.x));
+            lineEl.setAttribute("y1", String(obj.p1.y));
+            lineEl.setAttribute("x2", String(obj.p2.x));
+            lineEl.setAttribute("y2", String(obj.p2.y));
+          } else if (obj.kind === "line") {
+            const dir = norm(obj.direction);
+            const span = renderSpan();
+            lineEl.setAttribute("x1", String(obj.point.x - dir.x * span));
+            lineEl.setAttribute("y1", String(obj.point.y - dir.y * span));
+            lineEl.setAttribute("x2", String(obj.point.x + dir.x * span));
+            lineEl.setAttribute("y2", String(obj.point.y + dir.y * span));
+          } else if (obj.kind === "ray") {
+            const dir = norm(obj.direction);
+            const span = renderSpan();
+            lineEl.setAttribute("x1", String(obj.origin.x));
+            lineEl.setAttribute("y1", String(obj.origin.y));
+            lineEl.setAttribute("x2", String(obj.origin.x + dir.x * span));
+            lineEl.setAttribute("y2", String(obj.origin.y + dir.y * span));
+          } else {
+            continue;
+          }
+          const isPrimary = id === "segmentAB" || id === "diameterCD";
+          const stroke = id === "bisectorP" ? "#d97706" : (isPrimary ? "#334155" : "#2563eb");
+          const strokeWidth = id === "bisectorP" ? "2.6" : (isPrimary ? "2.5" : "1.8");
+          lineEl.setAttribute("stroke", stroke);
+          lineEl.setAttribute("stroke-width", strokeWidth);
+          lineEl.setAttribute("stroke-dasharray", id === "parallelAtC" ? "8 6" : (id === "bisectorP" ? "10 5" : ""));
+          layers.lines.appendChild(lineEl);
+        }
+      }
+
+      const p = getPoint("P");
+      const a = getPoint("A");
+      const b = getPoint("B");
+      const k = getPoint("K");
+      if (p && a && b && k) {
+        const bisectorSegment = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        bisectorSegment.setAttribute("x1", String(p.x));
+        bisectorSegment.setAttribute("y1", String(p.y));
+        bisectorSegment.setAttribute("x2", String(k.x));
+        bisectorSegment.setAttribute("y2", String(k.y));
+        bisectorSegment.setAttribute("stroke", "#d97706");
+        bisectorSegment.setAttribute("stroke-width", "3.2");
+        bisectorSegment.setAttribute("stroke-linecap", "round");
+        layers.markers.appendChild(bisectorSegment);
+
+        const arc1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        arc1.setAttribute("d", arcPath(p, 34, a, k));
+        arc1.setAttribute("fill", "none");
+        arc1.setAttribute("stroke", "#d97706");
+        arc1.setAttribute("stroke-width", "2.2");
+        const arc2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        arc2.setAttribute("d", arcPath(p, 46, k, b));
+        arc2.setAttribute("fill", "none");
+        arc2.setAttribute("stroke", "#d97706");
+        arc2.setAttribute("stroke-width", "2.2");
+        layers.markers.appendChild(arc1);
+        layers.markers.appendChild(arc2);
+
+        const bisectorLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        bisectorLabel.setAttribute("x", String((p.x + k.x) / 2 + 8));
+        bisectorLabel.setAttribute("y", String((p.y + k.y) / 2 - 8));
+        bisectorLabel.setAttribute("font-size", "12");
+        bisectorLabel.setAttribute("font-weight", "700");
+        bisectorLabel.setAttribute("fill", "#b45309");
+        bisectorLabel.textContent = "bisector";
+        layers.markers.appendChild(bisectorLabel);
+      }
+
+      for (const point of state.points.values()) {
+        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        circle.setAttribute("cx", String(point.x));
+        circle.setAttribute("cy", String(point.y));
+        circle.setAttribute("r", point.free ? "6.5" : "5.4");
+        circle.setAttribute("fill", point.free ? "#0f766e" : "#c2410c");
+        circle.setAttribute("stroke", "#ffffff");
+        circle.setAttribute("stroke-width", "2");
+        circle.dataset.pointId = point.id;
+        if (point.free) circle.style.cursor = "grab";
+        text.setAttribute("x", String(point.x + 8));
+        text.setAttribute("y", String(point.y - 8));
+        text.setAttribute("font-size", "14");
+        text.setAttribute("font-weight", "700");
+        text.setAttribute("fill", "#111827");
+        text.textContent = point.label || point.id;
+        group.appendChild(circle);
+        group.appendChild(text);
+        layers.points.appendChild(group);
+      }
+
+      svg.appendChild(layers.circles);
+      svg.appendChild(layers.polygons);
+      svg.appendChild(layers.lines);
+      svg.appendChild(layers.markers);
+      svg.appendChild(layers.points);
+      renderLogs();
+    }
+
+    function renderLogs() {
+      layerLog.innerHTML = "";
+      if (!state.lastLayerInfo.length) {
+        const item = document.createElement("div");
+        item.className = "log-item";
+        item.textContent = "No propagation yet.";
+        layerLog.appendChild(item);
+        return;
+      }
+      for (const layer of state.lastLayerInfo) {
+        const item = document.createElement("div");
+        item.className = "log-item";
+        if (layer.layerIndex === -1) {
+          item.innerHTML = `<strong>Trigger</strong><br>${layer.frontier.join(", ")}`;
+        } else {
+          item.innerHTML = `<strong>Layer ${layer.layerIndex}</strong><br>Changed: ${layer.frontier.join(", ")}<br>Updates: ${layer.triggered.join("<br>")}`;
+        }
+        layerLog.appendChild(item);
+      }
+    }
+
+    function fitView() {
+      state.viewBox = { ...state.scene.viewBox };
+      renderAll();
+    }
+
+    function resetScene() {
+      initState();
+      radiusSlider.value = String(getScalar("r1"));
+      radiusValue.textContent = String(getScalar("r1"));
+      propagateFrom([...state.points.keys(), ...state.scalars.keys()], "initial recompute");
+      fitView();
+    }
+
+    function bindUi() {
+      supportedList.innerHTML = supportedObjects.map((text) => `<div class="list-item">${text}</div>`).join("");
+      sceneNotesEl.innerHTML = sceneNotes.map((text) => `<div class="list-item">${text}</div>`).join("");
+
+      radiusSlider.addEventListener("input", () => {
+        state.scalars.get("r1").value = Number(radiusSlider.value);
+        radiusValue.textContent = radiusSlider.value;
+        propagateFrom(["r1"], "radius scalar r1");
+      });
+
+      resetButton.addEventListener("click", resetScene);
+      fitButton.addEventListener("click", fitView);
+
+      svg.addEventListener("pointerdown", (evt) => {
+        const pointId = evt.target?.dataset?.pointId;
+        if (pointId) {
+          const point = state.points.get(pointId);
+          if (point?.free) {
+            dragState = {
+              pointId,
+              offset: sub(pointToScreen(evt), point)
+            };
+            svg.classList.add("dragging-point");
+            evt.preventDefault();
+            return;
+          }
+        }
+        const rect = svg.getBoundingClientRect();
+        const freePointIds = [...state.points.values()].filter((point) => point.free).map((point) => point.id);
+        panState = {
+          lastClientX: evt.clientX,
+          lastClientY: evt.clientY,
+          scaleX: rect.width > 0 ? state.viewBox.width / rect.width : 1,
+          scaleY: rect.height > 0 ? state.viewBox.height / rect.height : 1,
+          freePointIds
+        };
+      });
+
+      window.addEventListener("pointermove", (evt) => {
+        if (dragState) {
+          const cursor = pointToScreen(evt);
+          const nextPoint = sub(cursor, dragState.offset);
+          const p = state.points.get(dragState.pointId);
+          if (p) {
+            p.x = nextPoint.x;
+            p.y = nextPoint.y;
+            propagateFrom([dragState.pointId], `drag ${dragState.pointId}`);
+          }
+          evt.preventDefault();
+          return;
+        }
+        if (panState) {
+          const dx = (evt.clientX - panState.lastClientX) * panState.scaleX;
+          const dy = (evt.clientY - panState.lastClientY) * panState.scaleY;
+          if (Math.abs(dx) > EPS || Math.abs(dy) > EPS) {
+            for (const pointId of panState.freePointIds) {
+              const point = state.points.get(pointId);
+              if (!point) {
+                continue;
+              }
+              point.x += dx;
+              point.y += dy;
+            }
+            panState.lastClientX = evt.clientX;
+            panState.lastClientY = evt.clientY;
+            propagateFrom(panState.freePointIds, "translate scene");
+          };
+        }
+      });
+
+      window.addEventListener("pointerup", () => {
+        dragState = null;
+        panState = null;
+        svg.classList.remove("dragging-point");
+      });
+    }
+
+    bindUi();
+    resetScene();
+  </script>
+</body>
+</html>

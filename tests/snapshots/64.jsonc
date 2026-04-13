@@ -1,0 +1,61 @@
+// input: "64: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O). Line EF intersects circle (O) at two points P and Q."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "K"
+    },
+    {
+      "type": "line",
+      "name": "EF"
+    },
+    {
+      "type": "point",
+      "name": "P"
+    },
+    {
+      "type": "point",
+      "name": "Q"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    },
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "A",
+        "K"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

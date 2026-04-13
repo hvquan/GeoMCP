@@ -1,0 +1,27 @@
+// input: "10: Given triangle ABC with angle bisector AK."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "K"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "bisector",
+      "line1": "AK",
+      "line2": "BC"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

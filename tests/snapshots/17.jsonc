@@ -1,0 +1,54 @@
+// input: "17: Given triangle ABC. Let M be the midpoint of BC, N the midpoint of CA, and P the midpoint of AB."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "M"
+    },
+    {
+      "type": "point",
+      "name": "N"
+    },
+    {
+      "type": "point",
+      "name": "P"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "midpoint",
+      "point": "M",
+      "of": [
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "midpoint",
+      "point": "N",
+      "of": [
+        "C",
+        "A"
+      ]
+    },
+    {
+      "type": "midpoint",
+      "point": "P",
+      "of": [
+        "A",
+        "B"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

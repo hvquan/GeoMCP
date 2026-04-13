@@ -1,0 +1,70 @@
+// input: "18: Given triangle ABC. The medians AM, BN, CP intersect at G."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "G"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "median",
+      "line1": "AM",
+      "of": [
+        "A",
+        "BC"
+      ]
+    },
+    {
+      "type": "median",
+      "line1": "BN",
+      "of": [
+        "B",
+        "AC"
+      ]
+    },
+    {
+      "type": "median",
+      "line1": "CP",
+      "of": [
+        "C",
+        "AB"
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "G",
+      "of": [
+        "AM",
+        "BN"
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "G",
+      "of": [
+        "BN",
+        "CP"
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "G",
+      "of": [
+        "AM",
+        "CP"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

@@ -1,0 +1,21 @@
+// input: "06: Given two lines a and b intersecting at O."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "line",
+      "name": "a"
+    },
+    {
+      "type": "line",
+      "name": "b"
+    },
+    {
+      "type": "point",
+      "name": "O"
+    }
+  ],
+  "constraints": [],
+  "constructions": [],
+  "targets": []
+}

@@ -1,0 +1,17 @@
+// input: "01: Given two points A and B."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "point",
+      "name": "A"
+    },
+    {
+      "type": "point",
+      "name": "B"
+    }
+  ],
+  "constraints": [],
+  "constructions": [],
+  "targets": []
+}

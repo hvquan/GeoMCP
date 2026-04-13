@@ -1,0 +1,16 @@
+// input: "04: Given line d and point A on line d."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "line",
+      "name": "d"
+    },
+    {
+      "type": "point",
+      "name": "A"
+    }
+  ],
+  "constraints": [],
+  "constructions": []
+}

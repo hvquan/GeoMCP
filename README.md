@@ -1,89 +1,185 @@
 # GeoMCP
 
-MCP server de doc de hinh hoc va ve hinh chinh xac duoi dang SVG.
+MCP server for reading geometry problems and drawing accurate SVG diagrams.
 
-## Chuc nang hien tai
+## Features
 
-- Nhan de bai hinh hoc dang text (Tieng Viet hoac Tieng Anh co cau truc co ban)
-- Parse cac doi tuong:
-  - Diem (A, B, C...)
-  - Doan co do dai (AB = 3)
-  - Tam giac (tam giac ABC)
-  - Dieu kien vuong tai diem (vuong tai A)
-  - Tam giac can tai dinh, tam giac deu
-  - Tam giac vuong (vi du: `tam giac vuong ABC tai A`)
-  - Trung diem (M la trung diem cua AB)
-  - Diem thuoc doan (D thuoc BC)
-  - Hai duong thang song song (AB song song voi CD)
-  - Hai duong thang vuong goc (AB vuong goc voi CD)
-  - Duong cao, trung tuyen, phan giac
-  - Tiep tuyen tai mot diem cua duong tron
-  - Duong tron noi tiep, duong tron ngoai tiep tam giac
-  - Duong tron theo duong kinh (duong tron duong kinh AB)
-  - Tu giac co ban chuong trinh lop 6-9: hinh chu nhat, hinh vuong, hinh binh hanh, hinh thang
-  - Duong tron tam-ban kinh
-- Sinh toa do phu hop va render SVG
-- Tra ve `diagnostics` de bao cac rang buoc chua du du kien
+- Accepts geometry problems as plain text (Vietnamese or English)
+- Parses geometric objects:
+  - Points (A, B, C ...)
+  - Segments with given length (AB = 3)
+  - Triangles (triangle ABC)
+  - Right-angle condition at a vertex (right angle at A)
+  - Isosceles triangles, equilateral triangles
+  - Right triangles (e.g. `right triangle ABC at A`)
+  - Midpoints (M is the midpoint of AB)
+  - Points on a segment (D lies on BC)
+  - Parallel lines (AB parallel to CD)
+  - Perpendicular lines (AB perpendicular to CD)
+  - Altitudes, medians, angle bisectors
+  - Tangent at a point of a circle
+  - Inscribed and circumscribed circles of a triangle
+  - Circle by diameter (circle with diameter AB)
+  - Basic quadrilaterals (rectangle, square, parallelogram, trapezoid)
+  - Circle given center and radius
+- Computes coordinates and renders an SVG diagram
+- Returns `diagnostics` reporting constraints that lack sufficient data
 
-## Cai dat
+## System Architecture
+
+GeoMCP is **not** a pure AI agent. It is a **geometry processing pipeline** that combines NLP/LLM (structured extraction) with a deterministic geometry engine (coordinate placement + constraint solving + SVG rendering). AI is only involved in the first step — converting natural language into structured JSON — the rest is deterministic algorithms.
+
+The system runs in **two parallel modes**:
+
+| Mode | Entry point | Transport | Audience |
+|---|---|---|---|
+| **MCP tool server** | `src/index.ts` | stdio (MCP protocol) | AI assistants (Claude, Cursor, Zed, …) |
+| **Web application** | `src/webapp.ts` | HTTP REST + static files | Human users via browser |
+
+### Components
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  src/nlp/               NLP / Parsing layer                  │
+│    parser.ts            Bilingual heuristic parser (regex)   │
+│    llmParser.ts         LLM → GeometryModel (flat JSON)      │
+│    dslParser.ts         LLM → GeometryDsl (richer IR)        │
+│    dsl.ts               DSL types + dslToGeometryModel()     │
+├──────────────────────────────────────────────────────────────┤
+│  src/model/             Data model                           │
+│    types.ts             All TypeScript interfaces            │
+│    v2Model.ts           enrichModelForV2() – infer implied   │
+│                         constraints (altitudes, medians, …)  │
+├──────────────────────────────────────────────────────────────┤
+│  src/geometry/          Deterministic geometry engine        │
+│    layout.ts            buildLayout() – initial coordinates  │
+│    solver.ts            refineLayoutWithSolver() – relaxation│
+│    svg.ts               renderSvg() – produce SVG            │
+├──────────────────────────────────────────────────────────────┤
+│  src/index.ts           MCP server (stdio)                   │
+│  src/webapp.ts          HTTP server (REST API + sessions)    │
+├──────────────────────────────────────────────────────────────┤
+│  web/                   Browser frontend                     │
+│    index.html           Chat UI (calls /api/solve/stream)    │
+│    config.js            Backend URL config                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Data flow
+
+```
+Text input (or image)
+  │
+  ├─ [If image] → LLM vision (extractTextFromImage) → problem text
+  │
+  ├─ Heuristic parser (regex) [fast, no LLM]
+  │    or
+  │  LLM → JSON GeometryModel / GeometryDsl [more accurate]
+  │    (fallback to heuristic on error)
+  │
+  ├─ enrichModelForV2()   – infer implied constraints
+  │
+  ├─ buildLayout()        – place initial heuristic coordinates
+  │
+  ├─ refineLayoutWithSolver()  – iterative constraint relaxation
+  │
+  └─ renderSvg()          – output SVG string
+```
+
+In the browser frontend (`web/index.html`), after receiving the SVG, users can drag points interactively. The client-side constraint solver (`applyCircleConstraints`) uses a **directed dependency graph (DAG)** and **Kahn's topological sort** to update dependent points in the correct order (F0 → F1 → F2 → …) without iteration.
+
+### LLM usage
+
+| Location | Purpose | Default model |
+|---|---|---|
+| `webapp.ts` `extractTextFromImage()` | Extract problem text from image | `gpt-4.1-mini` (vision) |
+| `llmParser.ts` | Text → GeometryModel JSON | `gpt-4.1-mini` |
+| `dslParser.ts` | Text → GeometryDsl JSON | `gpt-4.1-mini` |
+
+All use the OpenAI-compatible API and can be switched to Ollama (local) or OpenRouter. The LLM is **not** involved in geometry solving or proof — only in structured extraction from natural language.
+
+## Installation
 
 ```bash
 npm install
 ```
 
-## Chay dev
+## Development
 
 ```bash
-npm run dev
+npm run build   # compile TypeScript → dist/
+npm test        # run all tests
 ```
 
-## Build va chay
+### Development Scripts
+
+Scripts follow the pattern `{surface}:{local?}:{debug?}`:
+
+| Script | Surface | Backend | Inspector | Command |
+|---|---|---|---|---|
+| `npm run web` | webapp | OpenAI | ❌ | `tsx src/webapp.ts` |
+| `npm run web:debug` | webapp | OpenAI | ✅ | webapp + `--inspect` |
+| `npm run web:local` | webapp | Ollama local | ❌ | webapp + `geomcp-qwen` via `localhost:11434` |
+| `npm run web:local:debug` | webapp | Ollama local | ✅ | webapp + Ollama + `--inspect` |
+| `npm run mcp` | MCP server | OpenAI | ❌ | `tsx src/index.ts` |
+| `npm run mcp:debug` | MCP server | OpenAI | ✅ | MCP server + `--inspect` |
+| `npm run mcp:local` | MCP server | Ollama local | ❌ | MCP server + `geomcp-qwen` via `localhost:11434` |
+
+**When to use which:**
+- **Day-to-day development** → `npm run web:local` (no API key needed, no inspector overhead)
+- **Debugging with breakpoints** → `npm run web:local:debug` (attach VS Code or Chrome DevTools to `localhost:9229`)
+- **Testing against OpenAI** → `npm run web:debug`
+- **MCP tool testing** (Claude / Cursor / …) → `npm run mcp` or `npm run mcp:local`
+
+The `web:local` and `web:local:debug` scripts automatically kill any existing webapp process before starting, so you can re-run without port conflicts.
+
+## Build and run
 
 ```bash
 npm run build
 npm start
 ```
 
-## Demo tuong tac
+## Interactive demo
 
-Co san mot demo HTML keo-tha cho bai toan mau:
+A drag-and-drop HTML demo is available for a sample problem:
 
 ```bash
 open interactive-demo.html
 ```
 
-Trong demo nay, ban co the keo diem `E` tren duong tron va cac diem phu thuoc nhu `A`, `B`, `H` se cap nhat theo rang buoc cua bai toan.
+In this demo you can drag point `E` along the circle and dependent points like `A`, `B`, `H` update automatically according to the problem constraints.
 
-## Chat UI (text/anh -> ve hinh)
+## Chat UI (text / image → draw)
 
-Da co them giao dien web kieu chat de nguoi dung:
+A chat-style web UI is included:
 
-- Nhap de bai bang text
-- Upload anh de OCR sang text
-- Dung LLM parse + constraint solver de ve SVG
-- Theo doi tien trinh xu ly theo luong realtime (OCR -> parse -> solve -> render)
-- Luu lich su hoi thoai theo session de refresh trang van con
+- Type a geometry problem as text
+- Upload an image for OCR → text
+- Uses LLM parsing + constraint solver to draw the SVG
+- Streams real-time progress (OCR → parse → solve → render)
+- Persists conversation history per session across page refreshes
 
-Chay UI local:
+Run the UI locally:
 
 ```bash
 npm run web
 ```
 
-Mo trinh duyet:
+Open the browser at:
 
 ```text
 http://localhost:4310
 ```
 
-Neu chay ban build:
+Or run from the build:
 
 ```bash
 npm run build
 npm run start:web
 ```
 
-Bien moi truong can thiet cho OCR/LLM parse:
+Required environment variables for OCR / LLM parsing:
 
 ```bash
 export GEOMCP_OPENAI_API_KEY="<your_api_key>"
@@ -92,16 +188,43 @@ export GEOMCP_OPENAI_MODEL="gpt-4.1-mini"
 export GEOMCP_OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
 
-### Chay online 24/7 (may ban tat van dung)
+### Using a local LLM (Ollama, no online API needed)
 
-Can tach 2 phan:
+To parse with a local model:
 
-1. Frontend static tren GitHub Pages
-2. Backend API tren cloud (Render/Fly/Cloud Run)
+1. Make sure Ollama is running:
 
-#### A. Deploy backend tren Render
+```bash
+ollama serve
+```
 
-- Tao `Web Service` tu repo nay
+2. Pull a local model (example):
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+3. Configure GeoMCP to use the local OpenAI-compatible endpoint:
+
+```bash
+export GEOMCP_OPENAI_BASE_URL="http://localhost:11434/v1"
+export GEOMCP_OPENAI_MODEL="qwen2.5:7b"
+unset GEOMCP_OPENAI_API_KEY
+unset OPENAI_API_KEY
+```
+
+With this setup the `read_and_draw_geometry_v2_llm` tool will parse using the local LLM via Ollama.
+
+### Running online 24/7 (serverless deployment)
+
+Split into two parts:
+
+1. Static frontend on GitHub Pages
+2. Backend API on a cloud host (Render / Fly / Cloud Run)
+
+#### A. Deploy the backend on Render
+
+- Create a `Web Service` from this repo
 - Build command:
 
 ```bash
@@ -114,40 +237,40 @@ npm install && npm run build
 npm run start:web
 ```
 
-- Dat environment variables:
+- Set environment variables:
   - `GEOMCP_OPENAI_API_KEY`
-  - `GEOMCP_OPENAI_MODEL` (vd: `gpt-4.1-mini` hoac model free)
-  - `GEOMCP_OPENAI_BASE_URL` (vd OpenRouter: `https://openrouter.ai/api/v1`)
-  - `GEOMCP_ALLOWED_ORIGINS` (vd: `https://hvquan.github.io`)
+  - `GEOMCP_OPENAI_MODEL` (e.g. `gpt-4.1-mini` or a free model)
+  - `GEOMCP_OPENAI_BASE_URL` (e.g. OpenRouter: `https://openrouter.ai/api/v1`)
+  - `GEOMCP_ALLOWED_ORIGINS` (e.g. `https://hvquan.github.io`)
 
-Sau khi deploy, ban co URL backend, vi du:
+After deployment you will have a backend URL such as:
 
 ```text
 https://geomcp-api.onrender.com
 ```
 
-#### B. Cau hinh frontend cho GitHub Pages
+#### B. Configure the frontend for GitHub Pages
 
-Sua file `web/config.js`:
+Edit `web/config.js`:
 
 ```js
 window.GEOMCP_API_BASE = "https://geomcp-api.onrender.com";
 ```
 
-Commit + push len `main`, GitHub Pages se cap nhat.
+Commit and push to `main`; GitHub Pages will update automatically.
 
-Khi do user mo:
+Users can then open:
 
 ```text
 https://hvquan.github.io/GeoMCP/
 ```
 
-Frontend se goi API cloud, khong phu thuoc may local cua ban.
+The frontend calls the cloud API and does not depend on your local machine.
 
-## Dua len GitHub va cho moi nguoi su dung
+## Publish to GitHub
 
-1. Tao repository moi tren GitHub (de o che do Public).
-2. Trong thu muc du an, chay:
+1. Create a new repository on GitHub (set to Public).
+2. Inside the project directory, run:
 
 ```bash
 git init
@@ -158,22 +281,22 @@ git remote add origin https://github.com/<username>/<repo>.git
 git push -u origin main
 ```
 
-3. Bat GitHub Pages:
-  - Vao `Settings` -> `Pages`
-  - `Source`: chon `Deploy from a branch`
-  - `Branch`: chon `main` va folder `/ (root)`
+3. Enable GitHub Pages:
+  - Go to `Settings` → `Pages`
+  - `Source`: select `Deploy from a branch`
+  - `Branch`: select `main` and folder `/ (root)`
 
-4. Link cong khai se co dang:
+4. The public URL will be:
 
 ```text
 https://<username>.github.io/<repo>/
 ```
 
-Trang nay se tu dong mo `interactive-demo.html` qua file `index.html`.
+This page automatically opens `interactive-demo.html` via `index.html`.
 
-## Cau hinh MCP client
+## MCP client configuration
 
-Vi du trong cau hinh MCP client, tro den lenh start:
+Example MCP client configuration pointing at the start command:
 
 ```json
 {
@@ -186,36 +309,36 @@ Vi du trong cau hinh MCP client, tro den lenh start:
 }
 ```
 
-## Tool cung cap
+## Available tools
 
 - `read_and_draw_geometry`
   - Input:
-    - `problem` (string): de bai hinh hoc
+    - `problem` (string): geometry problem text
   - Output:
-    - JSON gom `parsed`, `layout`, `svg`
+    - JSON with `parsed`, `layout`, `svg`
 
 - `read_and_draw_geometry_v2_llm`
   - Input:
-    - `problem` (string): de bai hinh hoc
-    - `llmModel` (string, optional): model LLM
-    - `fallbackToHeuristic` (boolean, optional, mac dinh `true`)
-    - `useConstraintSolver` (boolean, optional, mac dinh `true`)
-    - `solverIterations` (number, optional, mac dinh `160`)
+    - `problem` (string): geometry problem text
+    - `llmModel` (string, optional): LLM model name
+    - `fallbackToHeuristic` (boolean, optional, default `true`)
+    - `useConstraintSolver` (boolean, optional, default `true`)
+    - `solverIterations` (number, optional, default `160`)
   - Output:
-    - JSON gom `parserVersion`, `solver`, `warnings`, `parsed`, `layout`, `svg`
+    - JSON with `parserVersion`, `solver`, `warnings`, `parsed`, `layout`, `svg`
 
 ## Version 2 (LLM parser)
 
-Version cu van giu nguyen qua tool `read_and_draw_geometry`.
-Version 2 dung LLM qua tool `read_and_draw_geometry_v2_llm`.
+The original parser is still available via `read_and_draw_geometry`.
+Version 2 uses an LLM via `read_and_draw_geometry_v2_llm`.
 
-Version 2 da bo sung day du 3 huong:
+Version 2 adds full support for three approaches:
 
-1. Dung LLM de trich xuat structure JSON schema
-2. Them bo giai rang buoc hinh hoc (constraint solver lap)
-3. Tu dong suy dien va xu ly them quan he: duong cao, trung tuyen, tiep tuyen, vuong goc, diem thuoc duong, diem thuoc duong tron
+1. LLM-based JSON schema extraction
+2. Geometry constraint solver (iterative relaxation)
+3. Automatic inference of additional relationships: altitudes, medians, tangents, perpendiculars, points on lines, points on circles
 
-Dat bien moi truong truoc khi chay server:
+Set environment variables before starting the server:
 
 ```bash
 export GEOMCP_OPENAI_API_KEY="<your_api_key>"
@@ -224,41 +347,41 @@ export GEOMCP_OPENAI_MODEL="gpt-4.1-mini"
 export GEOMCP_OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
 
-## Vi du de bai
+## Example problem
 
 ```text
-Cho tam giac ABC, AB = 5, AC = 6, BC = 7.
-Ve duong cao tu A xuong BC tai H.
-Ve trung tuyen tu B den M.
-Ve phan giac cua goc BAC cat BC tai E.
-AB song song voi DE.
-AH vuong goc voi BC.
-Ve duong tron noi tiep tam giac ABC va duong tron ngoai tiep tam giac ABC.
+Triangle ABC, AB = 5, AC = 6, BC = 7.
+Draw the altitude from A to BC at H.
+Draw the median from B to M.
+Draw the angle bisector of angle BAC, intersecting BC at E.
+AB parallel to DE.
+AH perpendicular to BC.
+Draw the inscribed circle and the circumscribed circle of triangle ABC.
 ```
 
-## Mau cau de parser nhan tot
+## Sentence patterns the parser handles well
 
-- Song song: `AB song song voi CD`
-- Vuong goc: `AB vuong goc voi CD`
-- Duong cao: `duong cao tu A xuong BC tai H`
-- Trung tuyen: `trung tuyen tu B den M` (M se la trung diem canh doi dien neu xac dinh duoc tam giac)
-- Phan giac: `phan giac cua goc BAC cat BC tai E`
-- Tiep tuyen: `tiep tuyen tai P cua duong tron tam O`
-- Noi tiep: `duong tron noi tiep tam giac ABC`
-- Ngoai tiep: `duong tron ngoai tiep tam giac ABC`
-- Tam giac vuong: `tam giac vuong ABC tai A`
-- Duong kinh: `duong tron duong kinh AB`
-- Hinh chu nhat: `hinh chu nhat ABCD`
-- Hinh vuong: `hinh vuong ABCD`
-- Hinh binh hanh: `hinh binh hanh ABCD`
-- Hinh thang: `hinh thang ABCD`
+- Parallel: `AB parallel to CD`
+- Perpendicular: `AB perpendicular to CD`
+- Altitude: `altitude from A to BC at H`
+- Median: `median from B to M` (M will be the midpoint of the opposite side if the triangle is known)
+- Angle bisector: `angle bisector of angle BAC intersects BC at E`
+- Tangent: `tangent at P to circle with center O`
+- Inscribed circle: `inscribed circle of triangle ABC`
+- Circumscribed circle: `circumscribed circle of triangle ABC`
+- Right triangle: `right triangle ABC at A`
+- Diameter: `circle with diameter AB`
+- Rectangle: `rectangle ABCD`
+- Square: `square ABCD`
+- Parallelogram: `parallelogram ABCD`
+- Trapezoid: `trapezoid ABCD`
 
-Tool se tra ve chuoi SVG ban co the luu thanh file `.svg` de xem hinh.
+The tool returns an SVG string that you can save as a `.svg` file and view in any browser.
 
-## Ghi chu
+## Notes
 
-Ban MVP nay dung parser heuristic va bo dung hinh hinh hoc so cap. De dat do chinh xac cao voi de phuc tap, buoc tiep theo nen:
+This MVP uses a heuristic parser and a basic geometry solver. For higher accuracy on complex problems, next steps would be:
 
-1. Dung LLM de trich xuat structure (JSON schema)
-2. Them bo giai rang buoc hinh hoc day du (constraint solver)
-3. Tu dong xu ly them quan he song song, phan giac, tiep tuyen, duong cao...
+1. Use an LLM to extract structure (JSON schema)
+2. Add a full geometry constraint solver
+3. Automatically handle additional relationships: parallels, bisectors, tangents, altitudes …

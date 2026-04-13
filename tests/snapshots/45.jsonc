@@ -1,0 +1,64 @@
+// input: "45: Given acute triangle ABC inscribed in circle (O). Draw the altitudes AD, BE, CF."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "D"
+    },
+    {
+      "type": "point",
+      "name": "E"
+    },
+    {
+      "type": "point",
+      "name": "F"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "AD",
+      "line2": "BC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "BE",
+      "line2": "AC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "CF",
+      "line2": "AB"
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

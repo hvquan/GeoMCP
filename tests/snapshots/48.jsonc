@@ -1,0 +1,92 @@
+// input: "48: Given acute triangle ABC inscribed in circle (O). Let M be the midpoint of BC. Let I be the incenter of triangle ABC."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "M"
+    },
+    {
+      "type": "point",
+      "name": "I"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    },
+    {
+      "type": "midpoint",
+      "point": "M",
+      "of": [
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "equal_angle",
+      "angle1": [
+        "B",
+        "A",
+        "I"
+      ],
+      "angle2": [
+        "I",
+        "A",
+        "C"
+      ]
+    },
+    {
+      "type": "equal_angle",
+      "angle1": [
+        "A",
+        "B",
+        "I"
+      ],
+      "angle2": [
+        "I",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "equal_angle",
+      "angle1": [
+        "A",
+        "C",
+        "I"
+      ],
+      "angle2": [
+        "I",
+        "C",
+        "B"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

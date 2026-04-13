@@ -1,0 +1,16 @@
+// input: "02: Given segment AB."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "segment",
+      "points": [
+        "A",
+        "B"
+      ]
+    }
+  ],
+  "constraints": [],
+  "constructions": [],
+  "targets": []
+}

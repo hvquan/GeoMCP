@@ -137,28 +137,28 @@
 </head>
 <body>
   <main>
-    <h1>Demo kéo-thả điểm E, O, C</h1>
-    <p class="lead">Kéo điểm <strong>E</strong> dọc theo đường tròn, <strong>O</strong> để dịch chuyển toàn bộ hình, hoặc <strong>C</strong> để thay đổi bán kính và vị trí đường kính. Các điểm <strong>A</strong>, <strong>B</strong>, <strong>D</strong>, <strong>H</strong> tự cập nhật theo ràng buộc: <strong>OA ⟂ CE</strong>, <strong>B = AE ∩ tiếp tuyến tại D</strong>, <strong>EH ⟂ CD tại H</strong>.</p>
+    <h1>Interactive demo — drag points E, O, C</h1>
+    <p class="lead">Drag point <strong>E</strong> along the circle, <strong>O</strong> to translate the whole figure, or <strong>C</strong> to change the radius and diameter position. Points <strong>A</strong>, <strong>B</strong>, <strong>D</strong>, <strong>H</strong> update automatically according to the constraints: <strong>OA ⟂ CE</strong>, <strong>B = AE ∩ tangent at D</strong>, <strong>EH ⟂ CD at H</strong>.</p>
 
     <div class="layout">
       <section class="card meta">
-        <div><strong>Bài toán</strong></div>
-        <div>Cho đường tròn (O) có đường kính CD, tiếp tuyến tại C là đường thẳng Cx. Lấy điểm E thuộc đường tròn (O). Qua O kẻ đường thẳng vuông góc với CE, cắt Cx tại A. Qua D kẻ tiếp tuyến với đường tròn (O), tiếp tuyến này cắt AE tại B. Kẻ EH vuông góc CD tại H.</div>
-        <div style="margin-top: 14px;"><strong>Tương tác</strong></div>
-        <div>Kéo điểm E để thay đổi hình. Các điểm còn lại được tính lại tức thì.</div>
+        <div><strong>Problem</strong></div>
+        <div>Given circle (O) with diameter CD, the tangent at C is line Cx. Let E be a point on circle (O). Through O draw a line perpendicular to CE, intersecting Cx at A. Through D draw a tangent to circle (O), this tangent intersects AE at B. Draw EH perpendicular to CD at H.</div>
+        <div style="margin-top: 14px;"><strong>Interaction</strong></div>
+        <div>Drag point E to change the figure. All other points are recomputed instantly.</div>
         <div style="margin-top: 12px;">
-          <span class="pill" style="background:#dbeafe;color:#1d4ed8">Kéo O → dịch cả hình</span>
-          <span class="pill" style="background:#dcfce7;color:#15803d">Kéo C → đổi bán kính</span>
-          <span class="pill">Kéo E → đổi góc</span>
-          <span class="pill" style="background:#fee2e2;color:#991b1b">Tự cập nhật: A, B, D, H</span>
+          <span class="pill" style="background:#dbeafe;color:#1d4ed8">Drag O → translate figure</span>
+          <span class="pill" style="background:#dcfce7;color:#15803d">Drag C → change radius</span>
+          <span class="pill">Drag E → change angle</span>
+          <span class="pill" style="background:#fee2e2;color:#991b1b">Auto-updated: A, B, D, H</span>
         </div>
         <div class="controls">
           <label class="toggle">
             <input id="toggle-proof-lines" type="checkbox" />
-            <span>Hiện thêm các đoạn phụ <strong>AD</strong> và <strong>BC</strong> để minh hoạ khi cần chứng minh.</span>
+            <span>Show auxiliary segments <strong>AD</strong> and <strong>BC</strong> to illustrate a proof step.</span>
           </label>
         </div>
-        <div class="hint">Đây là bản demo ràng buộc cho bài cụ thể này. Nếu muốn tổng quát cho mọi đề, bước tiếp theo là thêm một constraint solver tương tác vào engine.</div>
+        <div class="hint">This demo is hard-coded to this specific problem. To generalise to any problem, the next step is to add an interactive constraint solver to the engine.</div>
       </section>
 
       <section class="stage">

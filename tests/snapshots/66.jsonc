@@ -1,0 +1,206 @@
+// input: "66: Given acute triangle ABC inscribed in circle (O). Let K be the point such that AK is a diameter of (O). The altitudes AD, BE, CF intersect at H. Line EF intersects circle (O) at two points P and Q. Let M be the midpoint of BC.\n1. Prove that angle OAC equals angle BAH.\n2. Prove that AP^2 = 2*AD*OM.\n3. Chord KQ intersects BC at L. Prove that lines AL and HQ intersect at a point lying on the circumcircle of triangle AEF."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "K"
+    },
+    {
+      "type": "segment",
+      "points": [
+        "A",
+        "D"
+      ]
+    },
+    {
+      "type": "segment",
+      "points": [
+        "B",
+        "E"
+      ]
+    },
+    {
+      "type": "segment",
+      "points": [
+        "C",
+        "F"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "H"
+    },
+    {
+      "type": "line",
+      "name": "l1"
+    },
+    {
+      "type": "line",
+      "name": "l2"
+    },
+    {
+      "type": "point",
+      "name": "M"
+    },
+    {
+      "type": "segment",
+      "points": [
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "P"
+    },
+    {
+      "type": "point",
+      "name": "Q"
+    },
+    {
+      "type": "point",
+      "name": "L"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    },
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "A",
+        "K"
+      ]
+    },
+    {
+      "type": "perpendicular",
+      "line1": "AD",
+      "line2": "BC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "BE",
+      "line2": "AC"
+    },
+    {
+      "type": "perpendicular",
+      "line1": "CF",
+      "line2": "AB"
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "AD",
+        "BE",
+        "CF"
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "P",
+      "of": [
+        "EF",
+        "l1"
+      ]
+    },
+    {
+      "type": "tangent",
+      "at": "A",
+      "line": "At",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "E",
+      "circle": "O"
+    },
+    {
+      "type": "intersection",
+      "point": "Q",
+      "of": [
+        "EF",
+        "l2"
+      ]
+    },
+    {
+      "type": "midpoint",
+      "point": "M",
+      "of": [
+        "B",
+        "C"
+      ]
+    }
+  ],
+  "constructions": [
+    {
+      "type": "intersection",
+      "point": "P",
+      "of": [
+        "EF",
+        "At"
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "L",
+      "of": [
+        "KQ",
+        "BC"
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "type": "angle_value",
+      "at": "O",
+      "angles": [
+        [
+          "A",
+          "O",
+          "C"
+        ],
+        [
+          "B",
+          "A",
+          "H"
+        ]
+      ]
+    },
+    {
+      "type": "equation",
+      "expr": "AP^2 = 2*AD*OM"
+    },
+    {
+      "type": "statement",
+      "text": "lines AL and HQ intersect at a point lying on the circumcircle of triangle AEF"
+    }
+  ]
+}

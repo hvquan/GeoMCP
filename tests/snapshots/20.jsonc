@@ -1,0 +1,73 @@
+// input: "20: Given triangle ABC. The altitudes AD, BE, CF intersect at H."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "type": "point",
+      "name": "D"
+    },
+    {
+      "type": "point",
+      "name": "E"
+    },
+    {
+      "type": "point",
+      "name": "F"
+    },
+    {
+      "type": "point",
+      "name": "H"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "altitude",
+      "line1": "AD",
+      "line2": "BC"
+    },
+    {
+      "type": "altitude",
+      "line1": "BE",
+      "line2": "AC"
+    },
+    {
+      "type": "altitude",
+      "line1": "CF",
+      "line2": "AB"
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "AD",
+        "BE"
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "BE",
+        "CF"
+      ]
+    },
+    {
+      "type": "intersection",
+      "point": "H",
+      "of": [
+        "CF",
+        "AD"
+      ]
+    }
+  ],
+  "constructions": [],
+  "targets": []
+}

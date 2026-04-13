@@ -1,0 +1,56 @@
+// input: "49: Given triangle ABC inscribed in circle (O). Draw the tangents to circle (O) at A, B, and C respectively."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "triangle",
+      "points": [
+        "A",
+        "B",
+        "C"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "type": "on_circle",
+      "point": "A",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "B",
+      "circle": "O"
+    },
+    {
+      "type": "on_circle",
+      "point": "C",
+      "circle": "O"
+    }
+  ],
+  "constructions": [
+    {
+      "type": "tangent",
+      "at": "A",
+      "line": "At",
+      "circle": "O"
+    },
+    {
+      "type": "tangent",
+      "at": "B",
+      "line": "Bt",
+      "circle": "O"
+    },
+    {
+      "type": "tangent",
+      "at": "C",
+      "line": "Ct",
+      "circle": "O"
+    }
+  ],
+  "targets": []
+}

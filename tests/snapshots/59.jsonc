@@ -1,0 +1,49 @@
+// input: "59: Given circle (O) with diameter AB. Let M be a point on circle (O), M ≠ A, B. Prove that triangle AMB is right-angled at M."
+// model: geomcp-qwen
+{
+  "objects": [
+    {
+      "type": "circle",
+      "center": "O"
+    },
+    {
+      "type": "point",
+      "name": "A"
+    },
+    {
+      "type": "point",
+      "name": "B"
+    },
+    {
+      "type": "point",
+      "name": "M"
+    }
+  ],
+  "constraints": [
+    {
+      "type": "diameter",
+      "circle": "O",
+      "points": [
+        "A",
+        "B"
+      ]
+    },
+    {
+      "type": "on_circle",
+      "point": "M",
+      "circle": "O"
+    }
+  ],
+  "constructions": [],
+  "targets": [
+    {
+      "type": "right_angle",
+      "at": "M",
+      "triangle": [
+        "A",
+        "M",
+        "B"
+      ]
+    }
+  ]
+}
