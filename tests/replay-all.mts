@@ -13,7 +13,7 @@
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
-import { runFromGeomcpDsl } from "../src/georender/pipeline/run-from-geomcp-dsl.js";
+import { runFromGeomcpDsl } from "../src/pipeline/run-from-geomcp-dsl.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);

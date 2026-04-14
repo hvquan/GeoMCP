@@ -5,7 +5,6 @@
  * and GeometryModel with identified constraints.
  */
 
-export { parseGeometryProblem } from './parser.js';
 export { expandDslMacros } from '../dsl/dsl.js';
 export { parseGeometryDslWithLLM } from './dslParser.js';
 export type { GeometryDsl } from '../dsl/dsl.js';

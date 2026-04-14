@@ -45,7 +45,7 @@
 
     .input-bar textarea {
       flex: 1;
-      min-height: 62px;
+      min-height: 92px;
       resize: vertical;
       border: 1px solid #cbd5e1;
       border-radius: 10px;

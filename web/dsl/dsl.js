@@ -17,6 +17,7 @@
 const dslInput         = document.getElementById('dsl-input');
 const canonicalOut     = document.getElementById('canonical-out');
 const svgWrap          = document.getElementById('svg-wrap');
+const exportHtmlBtn    = document.getElementById('export-html-btn');
 const errBox           = document.getElementById('errors');
 const warnBox          = document.getElementById('warnings-box');
 const snapshotSelect   = document.getElementById('snapshot-select');
@@ -348,6 +349,212 @@ function showSceneOutput(scene) {
   scenePlaceholder.style.display = 'none';
   sceneOut.style.display = '';
 }
+
+// ── Export HTML ───────────────────────────────────────────────────────────────
+
+async function buildExportHtml(svgEl) {
+  let svgStr = new XMLSerializer().serializeToString(svgEl);
+  svgStr = svgStr.replace(/<g\s[^>]*data-overlay="tangents"[^>]*>[\s\S]*?<\/g>/g, '');
+
+  const [engineJs, interactJs] = await Promise.all([
+    fetch('/geo-engine.js').then(r => r.text()),
+    fetch('/geo-interact.js').then(r => r.text()),
+  ]);
+
+  const irJson         = JSON.stringify(currentIr         ?? null);
+  const freePointsJson = JSON.stringify(currentFreePoints ?? {});
+  const sceneJson      = JSON.stringify(null); // will be re-derived on first drag
+  const fixedScaleJson = JSON.stringify(_fixedScale ?? null);
+  const fixedOffXJson  = JSON.stringify(_fixedOffX  ?? null);
+  const fixedOffYJson  = JSON.stringify(_fixedOffY  ?? null);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Geometry Figure</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #f4efe6; overflow: hidden; }
+    #container { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+    .svg-wrap { flex: 1; background: #fff; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+    .svg-wrap svg { display: block; width: 100%; height: 100%; touch-action: none; }
+    .toolbar { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 6px 12px; background: #f4efe6; border-top: 1px solid #e5dcc8; font-family: system-ui, sans-serif; font-size: 12px; color: #475569; flex-shrink: 0; }
+    .toolbar button { border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; background: #fff; color: #1f2937; }
+    .toolbar button:hover { background: #e2e8f0; }
+    .dragging-point { cursor: grabbing; }
+    circle[data-center-id] { cursor: col-resize; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div class="svg-wrap" id="svg-wrap">${svgStr}</div>
+    <div class="toolbar">
+      <span>Drag points &bull; Scroll to zoom &bull; Drag background to pan</span>
+      <button id="btn-fullscreen">&#x26F6; Full screen</button>
+    </div>
+  </div>
+  <script>
+${engineJs}
+  <\/script>
+  <script>
+${interactJs}
+  <\/script>
+  <script>
+    var _ir         = ${irJson};
+    var _freePoints = ${freePointsJson};
+    var _scene      = ${sceneJson};
+    var _fixedScale = ${fixedScaleJson};
+    var _fixedOffX  = ${fixedOffXJson};
+    var _fixedOffY  = ${fixedOffYJson};
+    var _container  = null;
+    var _liveDragging = false;
+
+    function _applyAngleDrag(event) {
+      var ptEnt = _ir.entities.find(function(e) { return e.id === event.pointId; });
+      if (!ptEnt || !ptEnt.construction || ptEnt.construction.type !== 'point_on_circle' || !ptEnt.construction.angle) return false;
+      var circEnt  = _ir.entities.find(function(e) { return e.id === ptEnt.construction.circle; });
+      var centerId = circEnt && circEnt.construction && circEnt.construction.center;
+      var ctr      = (centerId && _freePoints[centerId]) || (_scene && _scene.points && _scene.points.find(function(p) { return p.id === centerId; }));
+      if (!ctr) return false;
+      var angle  = Math.atan2(event.newY - ctr.y, event.newX - ctr.x);
+      var angEnt = _ir.entities.find(function(e) { return e.id === ptEnt.construction.angle; });
+      if (!angEnt) return false;
+      angEnt.construction.value = Math.round(angle * 100000) / 100000;
+      return true;
+    }
+
+    function _applyRadiusDrag(event) {
+      var cirEntity = _ir.entities.find(function(e) { return e.id === event.circleId; });
+      if (!cirEntity || !cirEntity.construction || cirEntity.construction.type !== 'circle_center_radius') return false;
+      var centerId = cirEntity.construction.center;
+      var centerPt = _freePoints[centerId] || (_scene && _scene.points && _scene.points.find(function(p) { return p.id === centerId; }));
+      if (!centerPt) return false;
+      var newR = Math.sqrt(Math.pow(event.mouseX - centerPt.x, 2) + Math.pow(event.mouseY - centerPt.y, 2));
+      if (!isFinite(newR) || newR < 0.01) return false;
+      var radEntity = _ir.entities.find(function(e) { return e.id === cirEntity.construction.radius; });
+      if (radEntity) radEntity.construction.value = Math.round(newR * 10000) / 10000;
+      return true;
+    }
+
+    function _patchSvgElements(curSvg, newSvg, skipId) {
+      newSvg.querySelectorAll('g[data-point-id]').forEach(function(ng) {
+        var pid = ng.getAttribute('data-point-id');
+        if (pid === skipId) return;
+        var cg = curSvg.querySelector('g[data-point-id="' + CSS.escape(pid) + '"]');
+        if (!cg) return;
+        var ndot = ng.querySelector('circle'), cdot = cg.querySelector('circle');
+        if (ndot && cdot) { cdot.setAttribute('cx', ndot.getAttribute('cx')); cdot.setAttribute('cy', ndot.getAttribute('cy')); }
+        var ntxt = ng.querySelector('text'), ctxt = cg.querySelector('text');
+        if (ntxt && ctxt) { ctxt.setAttribute('x', ntxt.getAttribute('x')); ctxt.setAttribute('y', ntxt.getAttribute('y')); }
+      });
+      newSvg.querySelectorAll('[data-id]').forEach(function(nel) {
+        var id = nel.getAttribute('data-id');
+        var cel = curSvg.querySelector('[data-id="' + CSS.escape(id) + '"]');
+        if (!cel || nel.tagName !== cel.tagName) return;
+        if (nel.tagName === 'line') {
+          ['x1','y1','x2','y2'].forEach(function(a) { cel.setAttribute(a, nel.getAttribute(a) || ''); });
+        } else if (nel.tagName === 'circle') {
+          ['cx','cy','r'].forEach(function(a) { cel.setAttribute(a, nel.getAttribute(a) || ''); });
+        } else if (nel.tagName === 'polygon' || nel.tagName === 'polyline') {
+          cel.setAttribute('points', nel.getAttribute('points') || '');
+        } else if (nel.tagName === 'path') {
+          cel.setAttribute('d', nel.getAttribute('d') || '');
+        }
+      });
+    }
+
+    function _runAndPatch(draggedId) {
+      var result = GeoEngine.runFromCanonical(_ir, _freePoints, _fixedScale, _fixedOffX, _fixedOffY);
+      var tmp = document.createElement('div');
+      tmp.innerHTML = result.svg;
+      var newSvg = tmp.querySelector('svg');
+      var curSvg = _container.querySelector('svg');
+      if (newSvg && curSvg) _patchSvgElements(curSvg, newSvg, draggedId);
+      _scene = result.scene || _scene;
+    }
+
+    function _onDragMove(event, scene, vb) {
+      if (!_ir || _liveDragging) return;
+      if (event.type !== 'drag_point' && event.type !== 'drag_radius') return;
+      _liveDragging = true;
+      var draggedId = null;
+      if (event.type === 'drag_point') {
+        if (!_applyAngleDrag(event)) {
+          _freePoints = Object.assign({}, _freePoints);
+          _freePoints[event.pointId] = { x: event.newX, y: event.newY };
+          draggedId = event.pointId;
+        }
+      } else { if (!_applyRadiusDrag(event)) { _liveDragging = false; return; } }
+      try { _runAndPatch(draggedId); } catch(_e) {}
+      _liveDragging = false;
+    }
+
+    function _onDragEnd(event, scene, savedVB) {
+      if (!_ir) return;
+      if (event.type === 'drag_point') {
+        if (!_applyAngleDrag(event)) {
+          _freePoints = Object.assign({}, _freePoints);
+          _freePoints[event.pointId] = { x: event.newX, y: event.newY };
+        }
+      } else if (event.type === 'drag_radius') {
+        _applyRadiusDrag(event);
+      }
+      var result = GeoEngine.runFromCanonical(_ir, _freePoints, _fixedScale, _fixedOffX, _fixedOffY);
+      _scene = result.scene || _scene;
+      _container.innerHTML = result.svg;
+      _startInteraction(savedVB);
+    }
+
+    function _startInteraction(restoreViewBox) {
+      interactSvg(_container, _scene, restoreViewBox, { onDragEnd: _onDragEnd, onDragMove: _onDragMove });
+    }
+
+    window.addEventListener('DOMContentLoaded', function () {
+      _container = document.getElementById('svg-wrap');
+      if (_ir) {
+        var result = GeoEngine.runFromCanonical(_ir, _freePoints, _fixedScale, _fixedOffX, _fixedOffY);
+        _scene = result.scene;
+        _container.innerHTML = result.svg;
+        _startInteraction(null);
+      }
+      document.getElementById('btn-fullscreen').addEventListener('click', function () {
+        var el = document.documentElement;
+        if (!document.fullscreenElement) { el.requestFullscreen && el.requestFullscreen(); }
+        else { document.exitFullscreen && document.exitFullscreen(); }
+      });
+      document.addEventListener('fullscreenchange', function () {
+        var btn = document.getElementById('btn-fullscreen');
+        btn.textContent = document.fullscreenElement ? '\u29F5 Exit full screen' : '\u26F6 Full screen';
+      });
+    });
+  <\/script>
+</body>
+</html>`;
+}
+
+exportHtmlBtn.addEventListener('click', async () => {
+  const svgEl = svgWrap.querySelector('svg');
+  if (!svgEl) return;
+  exportHtmlBtn.disabled = true;
+  exportHtmlBtn.textContent = 'Exporting\u2026';
+  try {
+    const html = await buildExportHtml(svgEl);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'geometry-figure.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } finally {
+    exportHtmlBtn.disabled = false;
+    exportHtmlBtn.textContent = 'Export HTML';
+  }
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

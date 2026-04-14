@@ -120,9 +120,26 @@
 
     #svg-section {
       flex: 1; background: #fff; display: flex;
-      align-items: center; justify-content: center;
-      padding: 12px; overflow: auto;
+      flex-direction: column;
+      align-items: stretch; justify-content: stretch;
+      overflow: hidden;
     }
+    #svg-canvas {
+      flex: 1; min-height: 0; overflow: auto;
+      display: flex; align-items: center; justify-content: center;
+      padding: 12px;
+    }
+    #svg-toolbar {
+      display: flex; align-items: center; justify-content: flex-end;
+      padding: 6px 12px; border-top: 1px solid #e2e8f0;
+      background: #f8fafc; flex-shrink: 0;
+    }
+    #export-html-btn {
+      border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 14px;
+      font-size: 12px; cursor: pointer; background: #e2e8f0; color: #1f2937;
+      font-family: inherit;
+    }
+    #export-html-btn:hover { background: #cbd5e1; }
     #svg-wrap {
       width: 100%; height: 100%;
       display: flex; align-items: center; justify-content: center;
@@ -253,8 +270,13 @@
     <!-- Right: SVG preview -->
     <div class="panel" id="right" style="border-right:none">
       <div id="svg-section">
-        <div id="svg-wrap">
-          <p class="placeholder-msg">Run adaptation to see the diagram</p>
+        <div id="svg-canvas">
+          <div id="svg-wrap">
+            <p class="placeholder-msg">Run adaptation to see the diagram</p>
+          </div>
+        </div>
+        <div id="svg-toolbar">
+          <button id="export-html-btn">Export HTML</button>
         </div>
       </div>
     </div>

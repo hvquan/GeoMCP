@@ -264,19 +264,30 @@
       const exportBtn = document.createElement("button");
       exportBtn.className = "ghost";
       exportBtn.textContent = "Export HTML";
-      exportBtn.addEventListener("click", () => {
+      exportBtn.addEventListener("click", async () => {
         const svgEl = wrap.querySelector("svg");
         if (!svgEl) return;
-        const html = buildExportHtml(svgEl, null);
-        const blob = new Blob([html], { type: "text/html" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "geometry-figure.html";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        exportBtn.disabled = true;
+        exportBtn.textContent = "Exporting…";
+        try {
+          const [engineJs, interactJs] = await Promise.all([
+            fetch(apiUrl("/geo-engine.js")).then(r => r.text()),
+            fetch(apiUrl("/geo-interact.js")).then(r => r.text()),
+          ]);
+          const html = buildExportHtml(svgEl, _currentIr, { ..._currentFreePoints }, payload.scene, _fixedScale, _fixedOffX, _fixedOffY, engineJs, interactJs);
+          const blob = new Blob([html], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "geometry-figure.html";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } finally {
+          exportBtn.disabled = false;
+          exportBtn.textContent = "Export HTML";
+        }
       });
       toolbar.appendChild(exportBtn);
       inner.appendChild(toolbar);
@@ -308,14 +319,15 @@
     }
 
     // ── Export ───────────────────────────────────────────────────────────────────
-    function buildExportHtml(svgEl, parsed) {
+    function buildExportHtml(svgEl, ir, freePoints, scene, fixedScale, fixedOffX, fixedOffY, engineJs, interactJs) {
       let svgStr = new XMLSerializer().serializeToString(svgEl);
       svgStr = svgStr.replace(/<g\s[^>]*data-overlay="tangents"[^>]*>[\s\S]*?<\/g>/g, "");
-      const parsedJson = JSON.stringify(parsed || null);
-      const helpers = [distance.toString(), parseNumber.toString(), findNearestPoint.toString()].join("\n\n");
-      let enhanceFn = enhanceInteractiveSvg.toString();
-      enhanceFn = enhanceFn.replace("lastFigureState = { points, parsed, svgEl: svg };", "/* export */");
-      enhanceFn = enhanceFn.replace('patchBar.classList.add("visible");', "/* export */");
+      const irJson         = JSON.stringify(ir         ?? null);
+      const freePointsJson = JSON.stringify(freePoints ?? {});
+      const sceneJson      = JSON.stringify(scene      ?? null);
+      const fixedScaleJson = JSON.stringify(fixedScale ?? null);
+      const fixedOffXJson  = JSON.stringify(fixedOffX  ?? null);
+      const fixedOffYJson  = JSON.stringify(fixedOffY  ?? null);
 
       return `<!DOCTYPE html>
 <html lang="en">
@@ -338,26 +350,146 @@
 </head>
 <body>
   <div id="container">
-    <div class="svg-wrap" id="svg-wrap">\${svgStr}</div>
+    <div class="svg-wrap" id="svg-wrap">${svgStr}</div>
     <div class="toolbar">
       <span>Drag points &bull; Scroll to zoom &bull; Drag background to pan</span>
       <button id="btn-fullscreen">&#x26F6; Full screen</button>
     </div>
   </div>
   <script>
-    const PARSED = \${parsedJson};
-    \${helpers}
-    \${enhanceFn}
-    window.addEventListener("DOMContentLoaded", function () {
-      enhanceInteractiveSvg(document.getElementById("svg-wrap"), PARSED, null);
-      document.getElementById("btn-fullscreen").addEventListener("click", function () {
-        const el = document.documentElement;
+${engineJs}
+  <\/script>
+  <script>
+${interactJs}
+  <\/script>
+  <script>
+    var _ir         = ${irJson};
+    var _freePoints = ${freePointsJson};
+    var _scene      = ${sceneJson};
+    var _fixedScale = ${fixedScaleJson};
+    var _fixedOffX  = ${fixedOffXJson};
+    var _fixedOffY  = ${fixedOffYJson};
+    var _container  = null;
+
+    function _rerender(ir, freePoints, scene, savedVB) {
+      var result = GeoEngine.runFromCanonical(ir, freePoints, _fixedScale, _fixedOffX, _fixedOffY);
+      _freePoints = freePoints;
+      _scene      = result.scene || scene;
+      _container.innerHTML = result.svg;
+      _startInteraction(savedVB);
+    }
+
+    function _applyAngleDrag(event) {
+      var ptEnt = _ir.entities.find(function(e) { return e.id === event.pointId; });
+      if (!ptEnt || !ptEnt.construction || ptEnt.construction.type !== 'point_on_circle' || !ptEnt.construction.angle) return false;
+      var circEnt  = _ir.entities.find(function(e) { return e.id === ptEnt.construction.circle; });
+      var centerId = circEnt && circEnt.construction && circEnt.construction.center;
+      var ctr      = (centerId && _freePoints[centerId]) || (_scene && _scene.points && _scene.points.find(function(p) { return p.id === centerId; }));
+      if (!ctr) return false;
+      var angle  = Math.atan2(event.newY - ctr.y, event.newX - ctr.x);
+      var angEnt = _ir.entities.find(function(e) { return e.id === ptEnt.construction.angle; });
+      if (!angEnt) return false;
+      angEnt.construction.value = Math.round(angle * 100000) / 100000;
+      return true;
+    }
+
+    function _applyRadiusDrag(event) {
+      var cirEntity = _ir.entities.find(function(e) { return e.id === event.circleId; });
+      if (!cirEntity || !cirEntity.construction || cirEntity.construction.type !== 'circle_center_radius') return false;
+      var centerId = cirEntity.construction.center;
+      var centerPt = _freePoints[centerId] || (_scene && _scene.points && _scene.points.find(function(p) { return p.id === centerId; }));
+      if (!centerPt) return false;
+      var newR = Math.sqrt(Math.pow(event.mouseX - centerPt.x, 2) + Math.pow(event.mouseY - centerPt.y, 2));
+      if (!isFinite(newR) || newR < 0.01) return false;
+      var radEntity = _ir.entities.find(function(e) { return e.id === cirEntity.construction.radius; });
+      if (radEntity) radEntity.construction.value = Math.round(newR * 10000) / 10000;
+      return true;
+    }
+
+    function _patchSvgElements(curSvg, newSvg, skipId) {
+      newSvg.querySelectorAll('g[data-point-id]').forEach(function(ng) {
+        var pid = ng.getAttribute('data-point-id');
+        if (pid === skipId) return;
+        var cg = curSvg.querySelector('g[data-point-id="' + CSS.escape(pid) + '"]');
+        if (!cg) return;
+        var ndot = ng.querySelector('circle'), cdot = cg.querySelector('circle');
+        if (ndot && cdot) { cdot.setAttribute('cx', ndot.getAttribute('cx')); cdot.setAttribute('cy', ndot.getAttribute('cy')); }
+        var ntxt = ng.querySelector('text'), ctxt = cg.querySelector('text');
+        if (ntxt && ctxt) { ctxt.setAttribute('x', ntxt.getAttribute('x')); ctxt.setAttribute('y', ntxt.getAttribute('y')); }
+      });
+      newSvg.querySelectorAll('[data-id]').forEach(function(nel) {
+        var id = nel.getAttribute('data-id');
+        var cel = curSvg.querySelector('[data-id="' + CSS.escape(id) + '"]');
+        if (!cel || nel.tagName !== cel.tagName) return;
+        if (nel.tagName === 'line') {
+          ['x1','y1','x2','y2'].forEach(function(a) { cel.setAttribute(a, nel.getAttribute(a) || ''); });
+        } else if (nel.tagName === 'circle') {
+          ['cx','cy','r'].forEach(function(a) { cel.setAttribute(a, nel.getAttribute(a) || ''); });
+        } else if (nel.tagName === 'polygon' || nel.tagName === 'polyline') {
+          cel.setAttribute('points', nel.getAttribute('points') || '');
+        } else if (nel.tagName === 'path') {
+          cel.setAttribute('d', nel.getAttribute('d') || '');
+        }
+      });
+    }
+
+    function _runAndPatch(draggedId) {
+      var result = GeoEngine.runFromCanonical(_ir, _freePoints, _fixedScale, _fixedOffX, _fixedOffY);
+      var tmp = document.createElement('div');
+      tmp.innerHTML = result.svg;
+      var newSvg = tmp.querySelector('svg');
+      var curSvg = _container.querySelector('svg');
+      if (newSvg && curSvg) _patchSvgElements(curSvg, newSvg, draggedId);
+      _scene = result.scene || _scene;
+    }
+
+    var _liveDragging = false;
+    function _onDragMove(event, scene, vb) {
+      if (!_ir || _liveDragging) return;
+      if (event.type !== 'drag_point' && event.type !== 'drag_radius') return;
+      _liveDragging = true;
+      var draggedId = null;
+      if (event.type === 'drag_point') {
+        if (!_applyAngleDrag(event)) {
+          _freePoints = Object.assign({}, _freePoints);
+          _freePoints[event.pointId] = { x: event.newX, y: event.newY };
+          draggedId = event.pointId;
+        }
+      } else { if (!_applyRadiusDrag(event)) { _liveDragging = false; return; } }
+      try { _runAndPatch(draggedId); } catch(_e) {}
+      _liveDragging = false;
+    }
+
+    function _onDragEnd(event, scene, savedVB) {
+      if (!_ir) return;
+      if (event.type === 'drag_point') {
+        if (!_applyAngleDrag(event)) {
+          _freePoints = Object.assign({}, _freePoints);
+          _freePoints[event.pointId] = { x: event.newX, y: event.newY };
+        }
+      } else if (event.type === 'drag_radius') {
+        _applyRadiusDrag(event);
+      }
+      _rerender(_ir, _freePoints, _scene, savedVB);
+    }
+
+    function _startInteraction(restoreViewBox) {
+      interactSvg(_container, _scene, restoreViewBox, { onDragEnd: _onDragEnd, onDragMove: _onDragMove });
+    }
+
+    window.addEventListener('DOMContentLoaded', function () {
+      _container = document.getElementById('svg-wrap');
+      if (_ir && _scene) {
+        _startInteraction(null);
+      }
+      document.getElementById('btn-fullscreen').addEventListener('click', function () {
+        var el = document.documentElement;
         if (!document.fullscreenElement) { el.requestFullscreen && el.requestFullscreen(); }
         else { document.exitFullscreen && document.exitFullscreen(); }
       });
-      document.addEventListener("fullscreenchange", function () {
-        const btn = document.getElementById("btn-fullscreen");
-        btn.textContent = document.fullscreenElement ? "\u29F5 Exit full screen" : "\u26F6 Full screen";
+      document.addEventListener('fullscreenchange', function () {
+        var btn = document.getElementById('btn-fullscreen');
+        btn.textContent = document.fullscreenElement ? '\u29F5 Exit full screen' : '\u26F6 Full screen';
       });
     });
   <\/script>

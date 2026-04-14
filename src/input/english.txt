@@ -1,0 +1,9 @@
+Given circle (O) with diameter CD, the tangent at C is line Cx. Take point E on circle (O) (E ≠ C, D). Through O draw a line perpendicular to CE, meeting Cx at A.
+a) Prove that AE is a tangent to circle (O).
+b) Through D draw a tangent to circle (O); this tangent meets AE at B. Prove that: AC + BD = AB and that triangle AOB is right-angled at O.
+c) Draw EH ⊥ CD at H. Prove that AD and BC meet at the midpoint of EH.
+
+Given a circle with centre O and diameter CD. Through C draw the tangent Cx to the circle. Let E be a point on circle O. Through O draw a line perpendicular to segment CE meeting tangent line Cx at A.
+a) Prove that AE is a tangent to circle O.
+b) Draw the tangent to circle O at D. This tangent meets AE at B. Prove that AC + BD = AB and that triangle AOB is right-angled at vertex O.
+c) From E drop a perpendicular to CD at point H. Prove that lines AD and BC meet at the midpoint of EH.

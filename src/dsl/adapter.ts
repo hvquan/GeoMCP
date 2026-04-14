@@ -732,6 +732,49 @@ function createSegmentsFromTargets(targets: unknown[], ctx: Ctx) {
   }
 }
 
+/**
+ * Scan targets for { type:"midpoint", point:"N", segment:["E","H"] }.
+ * When point N is still a free point (not geometrically derived) but both
+ * segment endpoints are known, replace N's entity with a derived midpoint
+ * so the solver places it at the correct geometric position.
+ */
+function promoteMidpointTargets(targets: unknown[], ctx: Ctx) {
+  for (const t of targets) {
+    if (!t || typeof t !== "object") continue;
+    const target = t as Record<string, unknown>;
+    if (target.type !== "midpoint") continue;
+
+    const point   = target.point   as string | undefined;
+    const segment = target.segment as unknown;
+    if (!point || !segment) continue;
+
+    // Normalise segment to [a, b]
+    let a: string, b: string;
+    if (Array.isArray(segment) && segment.length === 2) {
+      [a, b] = segment as [string, string];
+    } else if (typeof segment === "string" && segment.length === 2) {
+      [a, b] = [segment[0], segment[1]];
+    } else {
+      continue;
+    }
+
+    // Only promote when: N is a free point AND both endpoints are known
+    const ptId = ctx.pid(point);
+    if (ctx.freePoints[ptId] === undefined) continue; // already derived
+    if (!ctx.hasPoint(a) || !ctx.hasPoint(b)) continue;
+
+    // Replace free-point entity with a derived midpoint
+    delete ctx.freePoints[ptId];
+    const idx = ctx.entities.findIndex(e => e.id === ptId);
+    if (idx >= 0) {
+      ctx.entities[idx] = {
+        id: ptId, kind: "point", label: point, origin: "derived",
+        construction: { type: "midpoint", a: ctx.pid(a), b: ctx.pid(b) },
+      } as CanonicalEntity;
+    }
+  }
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function adaptDsl(dsl: RawDSL): AdapterResult {
@@ -749,6 +792,10 @@ export function adaptDsl(dsl: RawDSL): AdapterResult {
 
   // 4. Auto-create segments mentioned in targets (e.g. "AC + BD = AB", triangle "AOB")
   createSegmentsFromTargets(dsl.targets ?? [], ctx);
+
+  // 5. Promote midpoint targets: if a target says "N = midpoint(E,H)" and N is
+  //    still a free point, derive its position geometrically from E and H.
+  promoteMidpointTargets(dsl.targets ?? [], ctx);
 
   return {
     canonical:  { version: "canonical-geometry/v1", entities: ctx.entities },

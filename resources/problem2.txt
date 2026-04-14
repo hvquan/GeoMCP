@@ -1,7 +1,0 @@
-Cho tam giác ABC nhọn, nội tiếp đường tròn (O). Các đường cao AD, BE, CF của tam giác ABC cắt nhau tại H.
-Cho tam giác ABC nhọn, nội tiếp đường tròn (O). Gọi K là điểm sao cho AK là đường kính của (O).
-
-Cho tam giác ABC nhọn, nội tiếp đường tròn (O). Gọi K là điểm sao cho AK là đường kính của (O). Các đường cao AD, BE, CF của tam giác ABC cắt nhau tại H. Đường thẳng EF cắt đường tròn (O) tại hai điểm P, Q (P và C nằm ở hai phía đối với đường thẳng AB). Gọi M là trung điểm BC.
-1. Chứng minh hai góc OAC = BAH.
-2. Chứng minh AP^2 = 2*AD*OM.
-3. Dây KQ cắt BC tại L. Chứng minh hai đường thẳng AL và HQ cắt nhau tại một điểm nằm trên đường tròn ngoại tiếp tam giác AEF.

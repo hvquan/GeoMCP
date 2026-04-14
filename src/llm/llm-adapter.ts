@@ -116,6 +116,7 @@ export async function callLlm(
         model: modelName,
         temperature: 0,
         top_p: 1,
+        seed: 42,
         max_tokens: 800,
         messages,
       }),

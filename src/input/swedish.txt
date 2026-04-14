@@ -1,0 +1,9 @@
+Givet cirkeln (O) med diametern CD, tangenten vid C är linjen Cx. Tag punkten E på cirkeln (O) (E ≠ C, D). Genom O dra en linje vinkelrät mot CE som skär Cx vid A.
+a) Bevisa att AE är en tangent till cirkeln (O).
+b) Genom D dra en tangent till cirkeln (O); denna tangent skär AE vid B. Bevisa att: AC + BD = AB och att triangeln AOB är rätvinklig vid O.
+c) Dra EH ⊥ CD vid H. Bevisa att AD och BC skär varandra i mittpunkten av EH.
+
+Givet en cirkel med centrum O och diameter CD. Genom C ritas tangenten Cx till cirkeln. Låt E vara en punkt på cirkeln O. Genom O dras en linje vinkelrät mot sträckan CE som skär tangentlinjen Cx vid A.
+a) Bevisa att AE är en tangent till cirkeln O.
+b) Dra tangenten till cirkeln O vid D. Denna tangent skär AE vid B. Bevisa att AC + BD = AB och att triangeln AOB är rätvinklig vid hörnet O.
+c) Från E fäll ett lod mot CD vid punkten H. Bevisa att linjerna AD och BC skär varandra i mittpunkten av EH.
