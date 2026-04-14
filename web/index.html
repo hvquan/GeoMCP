@@ -3,82 +3,61 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GeoMCP Chat UI</title>
+  <title>Geometry Draw</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
-      <h1 class="brand">GeoMCP Chat</h1>
-      <p class="sub">
-        Enter a geometry problem or upload an image. The system will OCR (if image), parse the problem,
-        solve constraints, and render an SVG diagram.
-      </p>
-      <span class="chip">Text to Diagram</span>
-      <span class="chip">Image to Text</span>
-      <span class="chip">Constraint Solver</span>
-      <p class="meta">
-        Local toolkit: <a href="./playground.html">Open geometry playground</a>
-      </p>
-      <p class="meta">
-        Step builder: <a href="./step-draw.html">Open step-by-step drawer</a>
-      </p>
-      <p class="meta">Tip: Typing out the problem clearly reduces OCR errors.</p>
-    </aside>
 
-    <section class="main">
-      <div id="messages" class="messages"></div>
-
-      <!-- Tab bar -->
-      <div class="tab-bar">
-        <button id="tab-chat" class="tab active">Chat</button>
-        <button id="tab-replay" class="tab">DSL Replay</button>
+    <!-- Input bar -->
+    <div class="input-bar">
+      <textarea id="prompt" placeholder="Enter geometry problem…" rows="3"></textarea>
+      <div class="input-controls">
+        <button id="run">&#9654; Run</button>
+        <button id="clear">&#10005; Clear</button>
       </div>
+    </div>
 
-      <!-- Chat composer (default) -->
-      <div id="panel-chat" class="composer">
-        <textarea id="prompt" placeholder="Enter geometry problem..."></textarea>
-        <div class="row">
-          <input id="file" type="file" accept="image/*" />
-          <select id="mode">
-            <option value="heuristic">Parser mode: Heuristic only</option>
-            <option value="llm">Parser mode: LLM + fallback</option>
-            <option value="llm-strict">Parser mode: LLM strict (JSON -> draw)</option>
-            <option value="dsl-llm" selected>Parser mode: DSL (LLM -> constraints -> engine)</option>
-            <option value="dsl-llm-strict">Parser mode: DSL strict (no fallback)</option>
-          </select>
-          <button id="send">Send</button>
-          <button id="clear" class="ghost">Clear chat</button>
-        </div>
-        <div class="patch-bar" id="patch-bar">
-          <span>Mode:</span>
-          <div class="patch-toggle">
-            <button id="btn-solve" class="active" title="Re-draw the full figure from scratch">Redraw from scratch</button>
-            <button id="btn-patch" title="Add elements to the current figure">Add to figure</button>
+    <!-- Main content: figure + pipeline -->
+    <div class="main">
+      <div class="figure-area" id="figure-area">
+        <div class="placeholder" id="placeholder">Enter a geometry problem above and press Run.</div>
+      </div>
+      <div class="results-panel">
+
+        <div class="results-section">
+          <div class="results-section-header">
+            <span>DSL Result</span>
+            <button class="copy-btn" id="copy-dsl">Copy</button>
           </div>
+          <pre id="out-dsl" class="results-pre"></pre>
         </div>
-      </div>
 
-      <!-- DSL Replay composer -->
-      <div id="panel-replay" class="composer" style="display:none">
-        <label style="font-size:13px;color:#475569;display:block;margin-bottom:6px">
-          Paste raw LLM DSL output (step [3] from pipeline log) — pipeline runs <strong>without</strong> calling the LLM.
-        </label>
-        <textarea id="dsl-input" placeholder='{"objects":[...],"constraints":[...],"constructions":[],"targets":[]}'
-          style="min-height:160px;font-family:monospace;font-size:12px"></textarea>
-        <div class="row" style="margin-top:8px">
-          <input id="dsl-input-text" type="text" placeholder="Original input text (optional)"
-            style="flex:1;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px" />
-          <button id="dsl-send">Replay DSL</button>
-          <button id="dsl-clear" class="ghost">Clear</button>
+        <div class="results-section">
+          <div class="results-section-header">
+            <span>Canonical IR</span>
+            <button class="copy-btn" id="copy-canonical">Copy</button>
+          </div>
+          <pre id="out-canonical" class="results-pre"></pre>
         </div>
+
+        <div class="results-section results-section--scene">
+          <div class="results-section-header results-section-header--scene">
+            <span>Scene Graph</span>
+            <button class="copy-btn" id="copy-scene">Copy</button>
+          </div>
+          <pre id="out-scene" class="results-pre"></pre>
+        </div>
+
       </div>
-    </section>
+    </div>
+
   </div>
 
   <script src="./config.js"></script>
   <script src="./geometry-helpers.js"></script>
   <script src="./interactive.js"></script>
+  <script src="./geo-interact.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

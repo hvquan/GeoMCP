@@ -14,11 +14,11 @@
  */
 
 import type { GeometryDsl } from "../dsl/dsl.js";
-import { callLlm, type LlmCallOptions } from "../ai/llm-adapter.js";
-import { GEOMETRY_SYSTEM_PROMPT, buildDynamicGeometrySystemPrompt } from "../ai/prompt-builder.js";
-import { extractJsonObject } from "../ai/output-extractor.js";
-import { dslSchema } from "../dsl/schema.js";
-import { repairDslJson, buildRepairPrompt as buildLlmRepairPrompt } from "../ai/repair.js";
+import { callLlm, type LlmCallOptions } from "../llm/llm-adapter.js";
+import { GEOMETRY_SYSTEM_PROMPT, buildDynamicGeometrySystemPrompt } from "../llm/prompt-builder.js";
+import { extractJsonObject } from "../llm/output-extractor.js";
+import { dslSchema } from "../dsl/geomcp-schema.js";
+import { repairDslJson, buildRepairPrompt as buildLlmRepairPrompt } from "../llm/repair.js";
 import type { NormalizedGeometryInput } from "../language/canonical-language.js";
 
 type DslParseOptions = LlmCallOptions & {
@@ -634,6 +634,8 @@ export type DslLlmDebug = {
   model: string;
   repairAttempted?: boolean;
   repairedResponse?: string;
+  /** Raw JSON extracted from LLM response, BEFORE any GeoMCP normalization. */
+  rawJson?: unknown;
 };
 
 export async function parseGeometryDslWithLLM(
@@ -677,6 +679,8 @@ export async function parseGeometryDslWithLLM(
     // locally, avoiding an expensive LLM retry round-trip for trivial structural problems.
     const repairResult = repairDslJson(jsonObj);
     const jsonToNormalize = repairResult.ok ? repairResult.repaired : jsonObj;
+    // Capture raw JSON (pre-normalization) so GeoRender pipeline can consume it directly.
+    debugInfo.rawJson = jsonToNormalize;
     const normalized = normalizeDsl(jsonToNormalize, problem);
 
     // Try strict parse first; on failure, attempt one LLM repair, then strip unrecognised objects

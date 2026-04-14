@@ -17,6 +17,7 @@ RULES:
   ex: "tiếp tuyến tại C là Cx" → objects:[line Cx] constraints:[{"type":"tangent","at":"C","line":"Cx","circle":"O"}]
 - INTERSECTION POINT ("cắt [line] tại [P]", "intersecting [line] at [P]", "skär [line] vid [P]"): add {"type":"point","name":"B"} in objects + {"type":"intersection","point":"B","of":["Dt","AE"]} in constructions.
 - PERPENDICULAR FOOT ("Kẻ EH ⊥ CD tại H", "Draw EH perpendicular to CD at H", "Dra EH vinkelrät mot CD vid H"): add point H in objects + {"type":"perpendicular","line1":"EH","line2":"CD"} in constraints + {"type":"intersection","point":"H","of":["EH","CD"]} in constraints.
+  ⚠ SOURCE RULE: the first letter of line1 is the EXTERNAL point you draw FROM — it must NOT be an endpoint of line2. "Draw EH ⊥ CD at H" → line1="EH" (E is external, not on CD). WRONG: line1="DH" (D is an endpoint of CD).
 - PROCESS ALL PARTS: handle every sub-part a), b), c)… of the problem.
 - DECLARE SEGMENTS/LINES: Every two-letter name in the problem (AE, BD, EH…) must appear in objects as segment or line.
 - TRIANGLE LINES — NAME RULE: in a two-letter name XY, X = the vertex the line comes FROM, Y = the foot on the opposite side.

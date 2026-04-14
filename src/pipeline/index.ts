@@ -5,10 +5,7 @@
  *   [L2/3] Language detection + geometry phrase normalization
  *   [L4]   Dynamic prompt building (language-aware few-shots)
  *   [L5-8] LLM parsing → repair → schema validation → normalizeDsl
- *   [L9]   dslToCanonical
- *   [L10-11] canonicalToGeometryModel + desugaring
- *   [L12-13] buildLayout → refineLayoutWithSolver
- *   [L14]  renderSvg
+ *   [L9+]  GeoRender: normalizeRawDsl → adaptDsl → compile → solve → scene → SVG
  *
  * This module is transport-agnostic (no HTTP, no sessions, no streaming).
  * Both the MCP server (src/index.ts) and the web API (src/webapp.ts) can call
@@ -16,35 +13,23 @@
  */
 import {
   parseGeometryDslWithLLM,
-  parseGeometryProblem,
-  canonicalToGeometryModel,
-  expandDslMacros,
-  parseGeometryProblemWithLLM
+  expandDslMacros
 } from "../parsing/index.js";
-import { dslToCanonical } from "../dsl/index.js";
-import { buildLayout, refineLayoutWithSolver, renderSvg } from "../geometry/index.js";
+import type { DslLlmDebug } from "../parsing/dslParser.js";
 import { detectAndNormalize } from "../language/index.js";
-import type { GeometryModel } from "../model/types.js";
-import type { CanonicalProblem } from "../dsl/index.js";
-import type { LayoutModel } from "../geometry/index.js";
+import { runFromGeomcpDsl } from "./run-from-geomcp-dsl.js";
 import type { GeometryDsl } from "../parsing/index.js";
 import type { NormalizedGeometryInput } from "../language/canonical-language.js";
 
 export interface GeometryPipelineOptions {
-  /** Parser mode (default: "dsl-llm"). */
-  parserMode?: "heuristic" | "dsl-llm" | "dsl-llm-strict" | "llm" | "llm-strict";
   /** LLM model name override (default: GEOMCP_OPENAI_MODEL env var or gpt-4.1-mini). */
   model?: string;
   /** Constraint-solver iterations (default: 160, clamped to [40, 2000]). */
   solverIterations?: number;
-  /** Fall back to heuristic parser if LLM fails (default: true). */
-  fallbackToHeuristic?: boolean;
-  /** Run the constraint solver after initial layout (default: true). */
-  useConstraintSolver?: boolean;
   /**
    * Skip layout and SVG computation — return only the parsed model and
    * intermediate representations (dsl, dslExpanded, llmDebug).
-   * When true, `layout` and `svg` in the result are empty placeholders.
+   * When true, `svg` in the result is an empty string.
    */
   parseOnly?: boolean;
 }
@@ -52,14 +37,23 @@ export interface GeometryPipelineOptions {
 export interface GeometryPipelineResult {
   parserVersion: string;
   warnings: string[];
-  parsed: GeometryModel;
-  canonical?: CanonicalProblem;
   dsl?: GeometryDsl;
   dslExpanded?: GeometryDsl;
-  llmDebug?: { prompt: string; rawResponse: string; model: string };
+  llmDebug?: DslLlmDebug;
   /** Language detection + phrase normalization result from Layer 1/2. */
   normalized?: NormalizedGeometryInput;
-  layout: LayoutModel;
+  /** Raw LLM JSON before any GeoMCP normalization — fed directly to GeoRender. */
+  rawDslJson?: unknown;
+  /** GeoRender RawDSL — output of normalizeRawDsl(), step 1 of the GeoRender pipeline. */
+  georenderRawDsl?: unknown;
+  /** GeoRender Canonical IR — output of adaptDsl(), step 2 of the GeoRender pipeline. */
+  georenderCanonical?: unknown;
+  /** GeoRender errors from compile/solve phase (empty = success). */
+  georenderErrors?: string[];
+  /** GeoRender scene graph (after compile+solve). */
+  scene?: unknown;
+  /** Free-point seed positions from adaptDsl(). */
+  freePoints?: Record<string, { x: number; y: number }>;
   svg: string;
 }
 
@@ -72,87 +66,48 @@ export async function runGeometryPipeline(
   options: GeometryPipelineOptions = {}
 ): Promise<GeometryPipelineResult> {
   const {
-    parserMode = "dsl-llm",
     model: llmModel,
-    solverIterations = 160,
-    fallbackToHeuristic = true,
-    useConstraintSolver = true,
     parseOnly = false
   } = options;
 
-  const clampedIterations = Math.max(40, Math.min(2000, solverIterations));
-
-  let parsed: GeometryModel | undefined;
-  let parserVersion = "v1-heuristic";
+  let parserVersion = "v3-dsl-llm-strict";
   const warnings: string[] = [];
-  let canonical: CanonicalProblem | undefined;
   let dsl: GeometryDsl | undefined;
   let dslExpanded: GeometryDsl | undefined;
-  let llmDebug: { prompt: string; rawResponse: string; model: string } | undefined;
+  let llmDebug: DslLlmDebug | undefined;
+  let rawDslJson: unknown;
 
   // [L2/3] Language detection + geometry phrase normalization
   const normalized = detectAndNormalize(problemText);
 
-  if (parserMode === "dsl-llm" || parserMode === "dsl-llm-strict") {
-    try {
-      dsl = await parseGeometryDslWithLLM(problemText, { model: llmModel, normalized });
-      if ((dsl as any)._llmDebug) {
-        llmDebug = (dsl as any)._llmDebug;
-        delete (dsl as any)._llmDebug;
-      }
-      dslExpanded = expandDslMacros(dsl);
-      canonical = dslToCanonical(dsl);
-      parsed = canonicalToGeometryModel(canonical, problemText);
-      parserVersion = parserMode === "dsl-llm-strict" ? "v3-dsl-llm-strict" : "v3-dsl-llm";
-    } catch (err) {
-      if (parserMode === "dsl-llm-strict" || !fallbackToHeuristic) {
-        throw err;
-      }
-      const errDebug = (err as any)._llmDebug;
-      if (errDebug) llmDebug = errDebug;
-      const message = err instanceof Error ? err.message : String(err);
-      warnings.push(`DSL parser fallback to LLM JSON parser: ${message}`);
-      try {
-        parsed = await parseGeometryProblemWithLLM(problemText, { model: llmModel });
-        parserVersion = "v3-dsl-fallback-v2-llm";
-      } catch (innerErr) {
-        const innerMessage = innerErr instanceof Error ? innerErr.message : String(innerErr);
-        warnings.push(`LLM JSON fallback to heuristic: ${innerMessage}`);
-        parsed = parseGeometryProblem(problemText);
-        parserVersion = "v3-dsl-fallback-v1";
-      }
+  try {
+    const result = await parseGeometryDslWithLLM(problemText, { model: llmModel, normalized });
+    if ((result as any)._llmDebug) {
+      llmDebug = (result as any)._llmDebug as DslLlmDebug;
+      delete (result as any)._llmDebug;
     }
-  } else if (parserMode === "llm" || parserMode === "llm-strict") {
-    try {
-      parsed = await parseGeometryProblemWithLLM(problemText, { model: llmModel });
-      parserVersion = parserMode === "llm-strict" ? "v2-llm-strict" : "v2-llm";
-    } catch (err) {
-      if (parserMode === "llm-strict" || !fallbackToHeuristic) {
-        throw err;
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      const hint = /\b429\b|quota|RESOURCE_EXHAUSTED/i.test(message)
-        ? "LLM parser fallback to heuristic: LLM quota exceeded (429)."
-        : `LLM parser fallback to heuristic: ${message}`;
-      warnings.push(hint);
-      parsed = parseGeometryProblem(problemText);
-      parserVersion = "v2-fallback-v1";
-    }
-  } else {
-    parsed = parseGeometryProblem(problemText);
-    parserVersion = "v1-heuristic";
+    dsl = result;
+    dslExpanded = expandDslMacros(dsl);
+    rawDslJson = llmDebug?.rawJson;
+  } catch (err) {
+    throw err;
   }
 
   if (parseOnly) {
-    const emptyLayout: LayoutModel = { points: [], segments: [], circles: [], nodes: [], diagnostics: [] };
-    return { parserVersion, warnings, parsed: parsed!, canonical, dsl, dslExpanded, llmDebug, normalized, layout: emptyLayout, svg: "" };
+    return { parserVersion, warnings, dsl, dslExpanded, llmDebug, normalized, rawDslJson, svg: "" };
   }
 
-  const baseLayout = buildLayout(parsed!);
-  const layout = useConstraintSolver
-    ? refineLayoutWithSolver(parsed!, baseLayout, { iterations: clampedIterations })
-    : baseLayout;
-  const svg = renderSvg(layout);
+  // [GeoRender] normalizeRawDsl → adaptDsl → compile → solve → scene → SVG
+  const georenderInput = rawDslJson ?? dsl;
+  if (!georenderInput) {
+    return { parserVersion, warnings, dsl, dslExpanded, llmDebug, normalized, rawDslJson, svg: "" };
+  }
+  const { svg, scene, freePoints, rawDsl: georenderRawDsl, canonical: georenderCanonical, warnings: grWarnings, errors } = runFromGeomcpDsl(georenderInput);
+  warnings.push(...grWarnings);
+  if (errors.length > 0) {
+    // Attach errors so callers can detect pipeline failure while still accessing intermediates
+    warnings.push(...errors.map(e => `GeoRender error: ${e}`));
+  }
 
-  return { parserVersion, warnings, parsed: parsed!, canonical, dsl, dslExpanded, llmDebug, normalized, layout, svg };
+  return { parserVersion, warnings, dsl, dslExpanded, llmDebug, normalized, rawDslJson, georenderRawDsl, georenderCanonical, georenderErrors: errors, scene, freePoints, svg };
 }

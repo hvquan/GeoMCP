@@ -1,5 +1,288 @@
 # Data Flow & Sequence Diagrams
 
+## Complete Pipeline (v3 DSL strict — only path)
+
+```
+Problem Text
+    │
+    │ [L1/2] Language Normalization
+    │ language/index.ts → detectAndNormalize(text)
+    │ → NormalizedGeometryInput { language, canonicalPhrases }
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  LLM Parsing Pipeline         parsing/dslParser.ts           │
+│                                                              │
+│  [L3] buildDynamicGeometrySystemPrompt(normalized)           │
+│       few-shots from llm/examples/dsl-examples.ts            │
+│                                                              │
+│  user message += phraseHint:                                 │
+│    "Detected geometry concepts (vi): diameter, tangent, …"  │
+│                                                              │
+│  [L4] callLlm()  (llm/llm-adapter.ts)                       │
+│  [L5] extractJsonObject()  (llm/output-extractor.ts)         │
+│  [L6] repairDslJson()  (llm/repair.ts)                       │
+│  [L7] dslSchema.parse()  (dsl/geomcp-schema.ts)              │
+│         ├── success → GeometryDsl                            │
+│         └── failure → buildRepairPrompt → retry → throw      │
+│                                                              │
+│  expandDslMacros()  (dsl/desugar.ts) → dslExpanded           │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ GeometryDsl + raw LLM JSON
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  DSL Normalization   dsl/normalize.ts                        │
+│                                                              │
+│  [L8] normalizeRawDsl(rawLlmJson)                            │
+│  1. midpoint token splitting                                 │
+│  2. intersection.of truncation to 2 items                    │
+│  3. auto-add missing point objects                           │
+│  4. deduplicate point objects                                │
+│  5. x-suffix alias repair ("Ax" → "Cx", warns)              │
+│  → { dsl: RawDSL, warnings: NormalizeWarning[] }             │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ RawDSL + warnings
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  DSL Adapter   dsl/adapter.ts                                │
+│                                                              │
+│  adaptDsl(rawDsl) — RawDSL → CanonicalGeometryIR             │
+│                                                              │
+│  processObjects():                                           │
+│    circle   → free_point + free_radius + circle_center_radius│
+│    triangle → 3× free_point + triangle_from_points           │
+│    point    → deferred (resolved by constraints)             │
+│    segment  → deferred (resolved after points known)         │
+│    line     → registered in _declaredLines                   │
+│                                                              │
+│  processConstraints():                                       │
+│    diameter   → point_on_circle + antipode + segment         │
+│    on_circle  → free_angle + point_on_circle                 │
+│    tangent    → tangent_at_point (infers circle if missing)  │
+│    perpendicular + intersection pair → foot_of_perpendicular │
+│    perpendicular alone:                                      │
+│      deferred-point guard: if foot is in intersectionPoints  │
+│        → only build perpendicular_through_point line         │
+│      degenerate-foot guard: if from-point is on line2        │
+│        → perpendicular_through_point + point_on_line         │
+│      else → foot_of_perpendicular                            │
+│    intersection → line_intersection                          │
+│      resolveOrCreateLine():                                  │
+│        declared _declaredLines + x-suffix alias check        │
+│        segment-like "AE" + both points known → line_through  │
+│    median    → midpoint + ensureSegment                      │
+│    bisector  → angle_bisector_foot + ensureSegment           │
+│                                                              │
+│  postProcess(): free declared points, free declared lines,   │
+│                 resolve pending segments                     │
+│                                                              │
+│  → { canonical: CanonicalGeometryIR, freePoints, warnings }  │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ CanonicalGeometryIR
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Runtime Compiler   runtime/compiler.ts                      │
+│                                                              │
+│  compileToRuntimeGraph(ir)                                   │
+│  1. convert each entity → RuntimeNode                        │
+│  2. extract dep edges from construction fields               │
+│  3. Kahn's topo-sort (cycle detection)                       │
+│  4. build byId + downstream indexes                          │
+│  → RuntimeGraph                                              │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ RuntimeGraph
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Solver   solver/                                            │
+│                                                              │
+│  initSolvedState(graph, freePoints)                          │
+│  → SolvedState (free points seeded, derived points absent)   │
+│                                                              │
+│  solveAll(graph, state)                                      │
+│  → traverse topo order, evaluate each construction once      │
+│  → SolvedState (all coords resolved)                         │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ SolvedState
+    ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Scene Pipeline   scene/                                     │
+│                                                              │
+│  buildSceneGraph(graph, state)  → SceneGraph                 │
+│  layout(scene)                  → PositionedScene            │
+│  computeViewport(positioned)    → ViewportTransform          │
+│  applyStyles(positioned, vp)    → StyledScene                │
+│    (Y-up → Y-down flip happens here)                         │
+│                                                              │
+│  renderSvg(styled)  (renderer/svg.ts)                        │
+│  → SVG string                                                │
+└──────────────────────────────────────────────────────────────┘
+                               │
+    ▼
+OUTPUT: SVG (via MCP response) or HTML (via webapp streaming)
+```
+
+---
+
+## Warning Merge Flow
+
+Warnings from the two normalize layers are merged in `runFromGeomcpDsl`:
+
+```
+normalizeRawDsl()  → NormalizeWarning[]
+                     prefixed "[normalize:code] message"
+adaptDsl()         → string[]
+                     plain adapter messages
+
+merged → warnings: string[]   (returned in GeomcpDslResult)
+
+runGeometryPipeline() adds further:
+  "GeoRender error: ..." for any compile/solve errors
+```
+
+---
+
+## Stage Detail: DSL Normalization Rules
+
+### Normalize layer (dsl/normalize.ts) — Rule N18: x-suffix alias repair
+
+Applies to `intersection.of`, `perpendicular.line1/2`, `parallel.line1/2`, `on_line.line`.
+
+```
+collect registeredLines:
+  objects[type=line].name  +  constraints/constructions[type=tangent].line
+
+for each line ref in constraints/constructions:
+  if ref not in registeredLines
+    and ref matches /^[A-Z][a-z]$/
+    and exactly 1 registered line shares the same trailing char:
+      replace ref with that line → emit NormalizeWarning
+      { code: "line_alias_repaired",
+        message: 'Repaired unknown line "Ax" → "Cx" (same suffix 'x').' }
+```
+
+### Adapter layer (dsl/adapter.ts) — declared-line alias check
+
+Fires when `resolveOrCreateLine` is called for a name in `_declaredLines`:
+
+```
+if name matches /^[A-Z][a-z]$/
+  and exactly 1 already-registered line (in lineIds) shares the same suffix:
+    alias → emit adapter warning
+    { 'Declared line "Ax" aliased to existing line "Cx" (same suffix 'x')' }
+```
+
+This catches the case where `"Ax"` is declared in `objects[]` (so the normalize layer doesn't touch it) but is actually a mistaken name for the tangent `"Cx"` that the adapter already registered while processing the tangent constraint.
+
+---
+
+## Stage Detail: Perpendicular Pattern Recognition
+
+```
+perpendicular { line1: "OA", line2: "CE" }
+
+1. Build intersectionPoints set from all intersection constructions.
+   If "A" is in intersectionPoints → deferred-point guard.
+
+2a. Deferred-point guard: A will be defined by intersection.
+    → build ln.OA = perpendicular_through_point(pt.O, ln.CE)
+    → do NOT create pt.A here
+
+2b. No intersection for A:
+    parse line1 name → pts1 = ["O","A"]
+    if pt.O known and pt.A unknown:
+      check degenerate-foot: is pt.O an endpoint of line2 (CE)?
+        → NO → pt.A = foot_of_perpendicular(pt.O, ln.CE) + seg.OA
+          (standard "EH ⟂ CD" pattern where E is unknown)
+
+perpendicular { line1: "DH", line2: "CD" }
+    pts1 = ["D","H"], pt.D known, pt.H unknown
+    degenerate-foot check: is pt.D an endpoint of ln.CD? → YES
+    → ln.DH = perpendicular_through_point(pt.D, ln.CD)
+    → pt.H = point_on_line(ln.DH)  (underdetermined on the perp line)
+```
+
+---
+
+## Stage Detail: Runtime Compiler — Cycle Detection
+
+```
+compileToRuntimeGraph(ir):
+  for each entity:
+    node = { id, kind, construction }
+    for each dep in construction deps:
+      if dep not in nodeMap → phantom dep entry inflates in-degree
+                              without ever decrementing → node stuck
+                              → "Cycle detected: ..."
+
+Prevention:
+  normalizeRawDsl  → ensures alias repair happens before compilation
+  adaptDsl         → only emits dep references for IDs it registers
+  declared-line alias check → prevents free_line from shadowing tangent
+  missing-circle inference → prevents "circ.undefined" phantom dep
+```
+
+---
+
+## Stage Detail: Language Normalization
+
+```
+detectLanguage(text)  [language/detect.ts]
+├── Vietnamese: Unicode diacritics (à, ê, ố, …)
+├── Swedish:   characteristic words (cirkel, vinkelrät, …)
+└── English:   fallback
+        │
+        ▼
+detectCanonicalPhrases(text, lang)  [language/normalize-phrases.ts]
+├── regex lexicon per language
+│   "thuộc đường tròn" → { type: "point_on_circle" }
+│   "đường kính"       → { type: "diameter" }
+└── returns CanonicalPhrase[]
+        │
+        ▼
+NormalizedGeometryInput { language, canonicalPhrases }
+```
+
+---
+
+## Interactive Drag Flow (webapp.ts)
+
+```
+Browser
+  │
+  ├─ drag on point P ──────────────────────┐
+  │                              webapp.ts  │
+  │  POST /api/drag              receives   │
+  │  ◄─────────────────────────  { point, x, y, ir, freePoints }
+  │
+  │  pipeline/run-interaction.ts:
+  │    update freePoints[P] = { x, y }
+  │    runFromCanonical(ir, freePoints)
+  │      → compile → solve → scene → SVG
+  │
+  ├─◄────── { svg, viewportTransform } ─── webapp.ts
+  │
+  └─ replace <svg>, update cached transform
+```
+
+No incremental update — full recompute from canonical IR on every drag.
+
+---
+
+## Error Scenarios & Debug Points
+
+| Symptom | Where to look |
+|---|---|
+| LLM returns invalid JSON | `llm/output-extractor.ts` — `extractJsonObject` |
+| Zod validation error | `dsl/geomcp-schema.ts` — check allowed types |
+| `pt.A` is `free_point` instead of intersection | Adapter: `"Ax"` declared in objects — check declared-line alias check |
+| Cycle detected in constraint graph | Compiler: phantom dep — check adapter's `ctx.cid(undefined)` or undeclared alias |
+| `pt.H` = `foot_of_perpendicular(D, CD)` = D | Degenerate foot: D is endpoint of CD — check degenerate-foot guard |
+| Warning `line_alias_repaired` | Normalize: `"Ax"` in constraint ref repaired to `"Cx"` — expected |
+| SVG coordinates inverted | `scene/style.ts` — Y-flip is `cy - y * scale` |
+| LLM API key error | `llm/llm-adapter.ts` — check env vars; local base URL bypasses key check |
+| Missing circle inferred | Adapter tangent case: `circle` field missing → `firstCircleCenter()` used |
+
+
 ## Complete Pipeline: v2 LLM path (primary)
 
 ```

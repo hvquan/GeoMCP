@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoMCP — DSL Debugger</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --col-left:   400px;
+      --col-mid:    360px;
+      --col-scene:  320px;
+      --scene-hdr:  33px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      background: #f1f5f9;
+      color: #1e293b;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 44px 1fr;
+    }
+
+    header {
+      background: #1e293b;
+      color: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    header span { opacity: .45; font-weight: 400; font-size: 12px; }
+    header nav  { margin-left: auto; display: flex; gap: 8px; }
+    header nav a {
+      font-size: 12px; font-weight: 500; color: #94a3b8;
+      text-decoration: none; padding: 3px 10px; border-radius: 5px;
+      transition: background .12s, color .12s;
+    }
+    header nav a:hover  { background: #334155; color: #f8fafc; }
+    header nav a.active { background: #2563eb; color: #fff; }
+
+    main {
+      display: grid;
+      grid-template-columns: var(--col-left) var(--col-mid) var(--col-scene) 1fr;
+      overflow: hidden;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #e2e8f0;
+      background: #fff;
+      overflow: hidden;
+    }
+    .panel:last-child { border-right: none; }
+
+    .panel-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; color: #64748b;
+      padding: 8px 12px; border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc; flex-shrink: 0;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .copy-btn {
+      all: unset; cursor: pointer; font-size: 10px;
+      padding: 2px 8px; border-radius: 4px; background: #e2e8f0; color: #475569;
+      font-weight: 600; transition: background .12s;
+    }
+    .copy-btn:hover { background: #cbd5e1; }
+
+    textarea {
+      flex: 1; resize: none; border: none; outline: none;
+      padding: 10px 12px; min-height: 0;
+      font: 12px/1.55 "JetBrains Mono","Fira Mono","Cascadia Code",monospace;
+      color: #1e293b; background: #fff; overflow: auto;
+    }
+    textarea[readonly] { background: #f8fafc; color: #334155; }
+
+    #left footer {
+      border-top: 1px solid #e2e8f0;
+      padding: 8px 12px;
+      display: flex; flex-direction: column; gap: 6px;
+      flex-shrink: 0;
+    }
+    #snapshot-select {
+      flex: 1; font-size: 12px; padding: 4px 8px; border: 1px solid #cbd5e1;
+      border-radius: 5px; background: #fff; color: #1e293b;
+      font-family: inherit; min-width: 0;
+    }
+    #run-row { display: flex; gap: 6px; }
+    #run {
+      flex: 1; background: #7c3aed; color: #fff; border: none; border-radius: 6px;
+      padding: 7px 0; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background .15s;
+    }
+    #run:hover  { background: #6d28d9; }
+    #run:active { background: #5b21b6; }
+    #errors {
+      font-size: 11px; color: #dc2626; white-space: pre-wrap;
+      max-height: 80px; overflow: auto;
+      font-family: "JetBrains Mono", monospace;
+    }
+    #warnings-box {
+      font-size: 11px; color: #b45309; white-space: pre-wrap;
+      max-height: 60px; overflow: auto;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    #svg-section {
+      flex: 1; background: #fff; display: flex;
+      align-items: center; justify-content: center;
+      padding: 12px; overflow: auto;
+    }
+    #svg-wrap {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #svg-wrap svg { max-width: 100%; max-height: 100%; height: auto; display: block; }
+    .placeholder-msg { color: #94a3b8; font-size: 13px; }
+
+    #scene-panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #e2e8f0;
+      background: #fff;
+      overflow: hidden;
+    }
+    #scene-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #f5f3ff;
+      border-bottom: 1px solid #ddd6fe;
+      flex-shrink: 0;
+      height: var(--scene-hdr);
+    }
+    #scene-header .scene-title {
+      font-size: 11px; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; color: #7c3aed;
+    }
+    #scene-out {
+      flex: 1;
+      overflow: auto;
+      min-height: 0;
+    }
+    #scene-content {
+      white-space: pre;
+      font: 11px/1.5 "JetBrains Mono", "Fira Mono", monospace;
+      padding: 8px 12px;
+      margin: 0;
+      color: #1e293b;
+    }
+    #scene-placeholder {
+      padding: 20px 12px;
+      color: #94a3b8;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    #flow-bar {
+      font-size: 10px; color: #94a3b8; padding: 5px 12px;
+      border-top: 1px solid #e2e8f0; background: #f8fafc;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      flex-shrink: 0;
+    }
+    #flow-bar .step { color: #64748b; font-weight: 600; }
+    #flow-bar .arrow { color: #cbd5e1; margin: 0 4px; }
+    #flow-bar .active { color: #7c3aed; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header>
+    GeoMCP
+    <span>DSL → Canonical → SVG</span>
+    <nav>
+      <a href="/">Chat</a>
+      <a href="/dsl" class="active">DSL Debugger</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Left: DSL input -->
+    <div class="panel" id="left">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>DSL Input</span>
+        <button class="copy-btn" id="copy-dsl" data-label="COPY">COPY</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0">
+        <span style="font-size:10px;color:#94a3b8;white-space:nowrap">Snapshot:</span>
+        <select id="snapshot-select">
+          <option value="">— load snapshot —</option>
+        </select>
+      </div>
+      <textarea id="dsl-input" spellcheck="false" placeholder='Paste DSL JSON here, e.g.:&#10;{&#10;  "objects": [...],&#10;  "constraints": [...],&#10;  "constructions": [],&#10;  "targets": []&#10;}'></textarea>
+      <footer>
+        <div id="warnings-box"></div>
+        <div id="run-row">
+          <button id="run">▶ Run Pipeline</button>
+        </div>
+        <div id="errors"></div>
+      </footer>
+    </div>
+
+    <!-- Middle: Canonical IR output -->
+    <div class="panel" id="mid">
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Canonical IR</span>
+        <button class="copy-btn" id="copy-canonical" data-label="COPY">COPY</button>
+      </div>
+      <textarea id="canonical-out" readonly spellcheck="false" placeholder="Canonical IR will appear here after running…"></textarea>
+      <div id="flow-bar">
+        <span class="step">DSL</span>
+        <span class="arrow">→</span>
+        <span class="step">Canonical</span>
+        <span class="arrow">→</span>
+        <span class="step">Runtime Graph</span>
+        <span class="arrow">→</span>
+        <span class="step">Solver</span>
+        <span class="arrow">→</span>
+        <span class="step">Scene</span>
+        <span class="arrow">→</span>
+        <span class="step">SVG</span>
+      </div>
+    </div>
+
+    <!-- Scene panel -->
+    <div id="scene-panel">
+      <div id="scene-header">
+        <span class="scene-title">Scene</span>
+        <span style="flex:1"></span>
+        <button class="copy-btn" id="copy-scene" data-label="COPY">COPY</button>
+      </div>
+      <div id="scene-out" style="display:none">
+        <pre id="scene-content"></pre>
+      </div>
+      <div id="scene-placeholder">Run the pipeline to see the Scene Graph here.</div>
+    </div>
+
+    <!-- Right: SVG preview -->
+    <div class="panel" id="right" style="border-right:none">
+      <div id="svg-section">
+        <div id="svg-wrap">
+          <p class="placeholder-msg">Run adaptation to see the diagram</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/geo-interact.js"></script>
+  <script src="/dsl/examples.js"></script>
+  <script src="/dsl/dsl.js"></script>
+</body>
+</html>

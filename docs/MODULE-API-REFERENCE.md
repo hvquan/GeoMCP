@@ -2,6 +2,505 @@
 
 ## Overview
 
+Public exports of each module. All modules use `.js` extensions in imports (TypeScript ESM, `"moduleResolution": "node16"`).
+
+---
+
+## `src/language/` — Multilingual Normalization (Layers 1–3)
+
+### `language/canonical-language.ts`
+
+```typescript
+export type DetectedLanguage = "vi" | "en" | "sv" | "unknown"
+
+export interface CanonicalPhrase {
+  type: string         // "diameter", "tangent", "point_on_circle", …
+  surfaceForm: string  // original text fragment that matched
+  language: DetectedLanguage
+}
+
+export interface NormalizedGeometryInput {
+  language: DetectedLanguage
+  canonicalPhrases: CanonicalPhrase[]
+  normalizedText?: string
+}
+```
+
+### `language/detect.ts` — Layer 1
+```typescript
+export function detectLanguage(text: string): DetectedLanguage
+```
+
+### `language/normalize-phrases.ts` — Layer 2
+```typescript
+export function detectCanonicalPhrases(
+  text: string,
+  language: DetectedLanguage
+): CanonicalPhrase[]
+```
+
+### `language/fewshot-selector.ts` — Layer 3
+```typescript
+export interface FewShotExample {
+  language: DetectedLanguage
+  topics: string[]
+  problem: string
+  dsl: object
+}
+
+export function selectFewShots(
+  language: DetectedLanguage,
+  phrases: CanonicalPhrase[],
+  maxExamples?: number   // default: 3
+): FewShotExample[]
+```
+
+### `language/index.ts`
+```typescript
+export function detectAndNormalize(text: string): NormalizedGeometryInput
+```
+
+---
+
+## `src/llm/` — LLM Integration (Layers 3–6)
+
+### `llm/prompt-builder.ts` — Layer 3
+```typescript
+export const GEOMETRY_SYSTEM_PROMPT: string
+export function buildGeometrySystemPrompt(): string
+export function buildDynamicGeometrySystemPrompt(
+  normalized: NormalizedGeometryInput
+): string
+```
+
+Few-shots sourced from `llm/examples/dsl-examples.ts` (40 examples, updated by `npm run test:capture`).
+
+### `llm/llm-adapter.ts` — Layer 4
+```typescript
+export interface LlmCallOptions { model?: string }
+export interface LlmApiConfig   { apiKey: string; model: string; baseUrl: string }
+export interface LlmResponse    { text: string; model: string }
+
+export function getApiConfig(options: LlmCallOptions): LlmApiConfig
+export async function callLlm(
+  systemPrompt: string,
+  userPrompt: string,
+  options?: LlmCallOptions
+): Promise<LlmResponse>
+```
+
+Config: `GEOMCP_OPENAI_BASE_URL` → `GEOMCP_OPENAI_API_KEY` → `GEOMCP_OPENAI_MODEL` (defaults to `gpt-4.1-mini`). Local URLs skip API key.
+
+### `llm/output-extractor.ts` — Layer 5
+```typescript
+export function extractJsonObject(text: string): unknown
+// Finds first { ... } in LLM response. Throws if none found.
+```
+
+### `llm/repair.ts` — Layer 6
+```typescript
+export function repairDslJson(raw: unknown): unknown
+// 6 structural fixes before Zod validation:
+//   1. Unwrap outer wrapper keys (result, data, output, …)
+//   2. Convert objects-as-map → array
+//   3. Default missing constraints/objects to []
+//   4. Coerce string numbers ("5" → 5)
+//   5. Uppercase point names ("a" → "A")
+//   6. Fix common type aliases
+
+export function buildRepairPrompt(rawResponse: string, error: string): string
+// Second-turn LLM call prompt for semantic repair.
+```
+
+---
+
+## `src/parsing/` — LLM Orchestration
+
+### `parsing/dslParser.ts`
+```typescript
+type DslParseOptions = LlmCallOptions & { normalized?: NormalizedGeometryInput }
+
+export interface DslLlmDebug {
+  prompt: string
+  rawResponse: string
+  rawJson: unknown
+  model: string
+}
+
+export async function parseGeometryDslWithLLM(
+  problemText: string,
+  options?: DslParseOptions
+): Promise<GeometryDsl>
+// Wires L1–L8: language detect → dynamic prompt → LLM call →
+// extract → repair → schema validate → normalize
+// Attaches _llmDebug to returned object (stripped by pipeline/index.ts)
+```
+
+### `parsing/index.ts`
+```typescript
+export { parseGeometryDslWithLLM }
+export { expandDslMacros }
+export type { GeometryDsl, DslLlmDebug }
+```
+
+---
+
+## `src/dsl/` — DSL Types, Validation, Normalization, Adaptation
+
+### `dsl/geomcp-schema.ts` — Layer 7 (renamed from schema.ts)
+```typescript
+export const dslSchema: z.ZodObject<...>
+export type DslSchemaOutput = z.infer<typeof dslSchema>
+
+export const pointSchema        // z.string().regex(/^[A-Z]$/)
+export const pointPairSchema    // z.tuple([pointSchema, pointSchema])
+export const pointTripleSchema
+export const pointQuadSchema
+export const lineValueSchema    // string | pointPair
+```
+
+`dslSchema.parse(rawJson)` coerces missing arrays to `[]`.
+
+### `dsl/raw-schema.ts`
+```typescript
+export interface RawDSL {
+  objects:       RawObject[]
+  constraints:   RawConstraint[]
+  constructions: RawConstraint[]
+  targets:       unknown[]
+}
+
+export type RawObject =
+  | { type: "point";    name: string }
+  | { type: "segment";  points: [string, string] }
+  | { type: "triangle"; points: [string, string, string] }
+  | { type: "circle";   center: string; radius?: string }
+  | { type: "line";     name: string }
+  | { type: "ray";      name: string }
+  | { type: string;     [k: string]: unknown }
+
+export type RawConstraint =
+  | { type: "midpoint";      point: string; of: [string, string] }
+  | { type: "perpendicular"; line1: string; line2: string }
+  | { type: "parallel";      line1: string; line2: string; through?: string }
+  | { type: "intersection";  point: string; of: string[] }
+  | { type: "diameter";      circle: string; points: [string, string] }
+  | { type: "on_circle";     point: string; circle: string }
+  | { type: "on_line";       point: string; line: string }
+  | { type: "tangent";       at: string; line: string; circle?: string }
+  | { type: "equal_angle";   angles: [string, string, string][] }
+  | { type: "equal_length";  segments: [string, string][] }
+  | { type: string;          [k: string]: unknown }
+
+export function isRawDSL(v: unknown): v is RawDSL
+```
+
+### `dsl/normalize.ts` — Layer 8
+```typescript
+export interface NormalizeWarning {
+  code:    string   // "line_alias_repaired" | "synthesized_missing_point" | …
+  message: string
+}
+
+export interface NormalizeResult {
+  dsl:      RawDSL
+  warnings: NormalizeWarning[]
+}
+
+export function normalizeRawDsl(input: unknown): NormalizeResult
+// Steps:
+//   1. Midpoint token splitting  ("BC" → ["B","C"] unless ["A","BC"] median pattern)
+//   2. Intersection.of truncation to 2 items
+//   3. Auto-add missing point objects from all constraint refs
+//   4. Deduplication
+//   5. x-suffix alias repair in constraint line refs (Rule N18)
+```
+
+### `dsl/adapter.ts`
+```typescript
+export interface AdapterResult {
+  canonical:  CanonicalGeometryIR
+  freePoints: Record<string, { x: number; y: number }>
+  warnings:   string[]
+}
+
+export function adaptDsl(dsl: RawDSL): AdapterResult
+// RawDSL → CanonicalGeometryIR.
+// Key behaviours:
+//   - deferred-point guard (perpendicular + intersection pairing)
+//   - degenerate-foot guard (from-point is endpoint of to-line)
+//   - declared-line x-suffix alias check
+//   - missing circle inference via ctx.firstCircleCenter()
+//   - median/bisector construction types
+```
+
+### `dsl/dsl.ts`
+```typescript
+export type GeometryDsl = { objects, constraints, constructions, targets }
+export function expandDslMacros(dsl: GeometryDsl): GeometryDsl
+// plus low-level helpers: asPointId, parseLineRef, parseSegmentName, …
+```
+
+### `dsl/index.ts`
+```typescript
+export { dslSchema } from './geomcp-schema.js'
+export { normalizeRawDsl } from './normalize.js'
+export { adaptDsl } from './adapter.js'
+export { dslToCanonical } from './canonical.js'
+export { displayLabel, normalizeModelIds } from './canonicalizer.js'
+```
+
+---
+
+## `src/canonical/schema.ts` — Canonical Geometry IR v1
+
+Engine-internal type contract between adapter and compiler.
+
+```typescript
+export type EntityId = string
+export type OriginKind = "explicit" | "derived" | "implicit"
+
+export interface CanonicalGeometryIR {
+  version: "canonical-geometry/v1"
+  entities: CanonicalEntity[]
+  relations?: CanonicalRelation[]
+}
+
+export type CanonicalEntity =
+  | CanonicalPoint | CanonicalLine | CanonicalRay | CanonicalSegment
+  | CanonicalCircle | CanonicalAngle | CanonicalTriangle | CanonicalPolygon
+  | CanonicalVector | CanonicalParameter
+```
+
+**Point constructions**: `free_point`, `midpoint`, `line_intersection`, `foot_of_perpendicular`, `angle_bisector_foot`, `point_on_circle`, `point_on_line`, `antipode`, `circumcenter`, `incenter`, `centroid`, `orthocenter`, `reflect`, `translate`, `rotate`
+
+**Line constructions**: `free_line`, `line_through_points`, `parallel_through_point`, `perpendicular_through_point`, `tangent_at_point`, `perpendicular_bisector`, `angle_bisector_line`
+
+**Circle constructions**: `circle_center_radius`, `circle_center_through_point`, `circumcircle`, `incircle`
+
+**Parameters**: `radius_parameter` (`free_radius`), `angle_parameter` (`free_angle`), `length_parameter` (`free_length`), `line_parameter` (`free_line_parameter`)
+
+---
+
+## `src/runtime/` — Runtime Compiler
+
+### `runtime/compiler.ts`
+```typescript
+export function compileToRuntimeGraph(ir: CanonicalGeometryIR): RuntimeGraph
+// 1. Convert each CanonicalEntity → RuntimeNode
+// 2. Extract dep edges from construction fields
+// 3. Kahn's topo-sort (throws "Cycle detected: ..." on cycle)
+// 4. Build byId + downstream indexes
+```
+
+### `runtime/schema.ts`
+```typescript
+export interface RuntimeGraph {
+  nodes:      RuntimeNode[]
+  byId:       Map<NodeId, RuntimeNode>
+  downstream: Map<NodeId, NodeId[]>
+}
+export type RuntimeNode = RuntimePointNode | RuntimeLineNode | RuntimeCircleNode | RuntimeParameterNode | …
+```
+
+### `runtime/dsl-compiler.ts` — legacy
+```typescript
+export function dslToGeometryModel(dsl: GeometryDsl, rawText: string): GeometryModel
+// Legacy path: uses expandDslMacros + walks DSL objects/constraints.
+// Used by test scripts in tests/runtime/.
+```
+
+---
+
+## `src/solver/` — Geometry Solver
+
+### `solver/state.ts`
+```typescript
+export type FreePointCoords = Record<EntityId, { x: number; y: number }>
+export type SolvedState     = Map<NodeId, SolvedValue>
+
+export function initSolvedState(
+  graph: RuntimeGraph,
+  freePoints: FreePointCoords
+): SolvedState
+// Seeds free points from freePoints arg.
+// Seeds parameters from RuntimeParameterNode.value.
+// Derived nodes left absent.
+```
+
+### `solver/recompute.ts`
+```typescript
+export function solveAll(graph: RuntimeGraph, state: SolvedState): SolvedState
+// Traverses nodes in topo order; evaluates each construction once.
+
+export function recompute(
+  graph: RuntimeGraph,
+  state: SolvedState,
+  changedId: NodeId
+): SolvedState
+// Incremental re-solve after one node changes (drag).
+// Does NOT touch changedId — only downstream.
+```
+
+---
+
+## `src/scene/` — Scene Pipeline
+
+### `scene/builder.ts`
+```typescript
+export function buildSceneGraph(
+  graph: RuntimeGraph,
+  state: SolvedState
+): SceneGraph
+```
+
+### `scene/layout.ts`
+```typescript
+export function layout(scene: SceneGraph): PositionedScene
+// Points with coords kept as-is; unpositioned points placed on ring around centroid.
+```
+
+### `scene/viewport.ts`
+```typescript
+export function computeViewport(scene: PositionedScene): ViewportTransform
+export interface ViewportTransform { scale: number; cx: number; cy: number; width: number; height: number }
+```
+
+### `scene/style.ts`
+```typescript
+export function applyStyles(scene: PositionedScene, vp: ViewportTransform): StyledScene
+// Converts math coords (Y-up) → canvas coords (Y-down).
+// Attaches default visual styles to each element.
+```
+
+### `scene/schema.ts`
+```typescript
+export interface SceneGraph { points, lines, circles, segments, rays, triangles, … }
+export interface PositionedScene extends SceneGraph { /* all points have x,y */ }
+export interface StyledScene extends PositionedScene { /* canvas-space, styled */ }
+```
+
+---
+
+## `src/renderer/svg.ts` — SVG Renderer
+
+```typescript
+export function renderSvg(scene: StyledScene): string
+// StyledScene → complete <svg>...</svg> string.
+// Geometry kinds: segment → <line>, ray → clipped <line>,
+//   line → full infinite <line>, circle → <circle>,
+//   triangle/polygon → <polygon>
+```
+
+---
+
+## `src/pipeline/` — End-to-end Orchestration
+
+### `pipeline/index.ts`
+```typescript
+export interface GeometryPipelineOptions {
+  model?:            string
+  solverIterations?: number   // default: 160 (legacy path); ignored by new solver
+  parseOnly?:        boolean  // stop after parsing, skip geometry solve
+}
+
+export interface GeometryPipelineResult {
+  parserVersion:        string   // always "v3-dsl-llm-strict"
+  warnings:             string[]
+  svg:                  string
+  dsl?:                 GeometryDsl
+  dslExpanded?:         GeometryDsl
+  rawDslJson?:          unknown   // raw LLM JSON before normalize
+  georenderRawDsl?:     unknown   // after normalizeRawDsl()
+  georenderCanonical?:  unknown   // after adaptDsl()
+  georenderErrors?:     string[]
+  scene?:               unknown
+  normalized?:          NormalizedGeometryInput
+  llmDebug?:            DslLlmDebug
+}
+
+export async function runGeometryPipeline(
+  problemText: string,
+  options?: GeometryPipelineOptions
+): Promise<GeometryPipelineResult>
+```
+
+### `pipeline/run-from-geomcp-dsl.ts`
+```typescript
+export interface GeomcpDslResult {
+  svg:       string
+  scene:     unknown
+  warnings:  string[]   // normalize warnings (prefixed) + adapter warnings
+  errors:    string[]   // compile/solve errors
+  rawDsl:    RawDSL     // after normalizeRawDsl()
+  canonical: CanonicalGeometryIR  // after adaptDsl()
+}
+
+export function runFromGeomcpDsl(rawInput: unknown): GeomcpDslResult
+```
+
+### `pipeline/run-from-canonical.ts`
+```typescript
+export function runFromCanonical(
+  ir: CanonicalGeometryIR,
+  freePoints: Record<string, { x: number; y: number }>,
+  fixedScale?: number,
+  fixedOffX?: number,
+  fixedOffY?: number
+): { scene: unknown; svg: string; errors: SolverError[] }
+```
+
+---
+
+## `src/index.ts` — MCP Entry Point
+
+Single tool: `read_and_draw_geometry`
+
+| Parameter | Type | Required |
+|---|---|---|
+| `problem` | `string` | yes |
+| `llmModel` | `string` | no |
+
+Returns JSON: `{ parserVersion, svg, warnings, georenderErrors, ... }` plus intermediate debug fields on `parseOnly`.
+
+---
+
+## `src/model/` + `src/geometry/` + `src/layout/` + `src/render/` — Legacy Engine
+
+Still used by `webapp.ts` for the `/api/solve` path (full pipeline via `runGeometryPipeline`) and by test scripts.
+
+### `model/types.ts`
+Core `GeometryModel` and `LayoutModel` interfaces — 20+ constraint types (`midpoints`, `perpendiculars`, `tangents`, `pointsOnCircles`, `lineIntersections`, `perpendicularThroughPointIntersections`, etc.).
+
+### `geometry/solver.ts`
+```typescript
+export function refineLayoutWithSolver(
+  model: GeometryModel,
+  layout: LayoutModel,
+  options?: { iterations?: number }
+): LayoutModel
+// Iterative convergence, up to `iterations` passes (default 160).
+```
+
+### `layout/layout.ts`
+```typescript
+export interface LayoutPolicy {
+  anchor(model, points, diagnostics): void
+  spreadFree(allPointIds, points): void
+}
+export const DEFAULT_LAYOUT_POLICY: LayoutPolicy
+
+export function buildLayout(model: GeometryModel, policy?: LayoutPolicy): LayoutModel
+```
+
+### `render/svg.ts`
+```typescript
+export function renderSvg(layout: LayoutModel): string
+```
+
+
+## Overview
+
 This document lists the public exports of each module. Internal functions are noted where they matter for understanding the module.
 
 All modules use `.js` extensions in imports (TypeScript ESM with `"moduleResolution": "node16"`).

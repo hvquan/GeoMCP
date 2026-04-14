@@ -114,4 +114,4 @@ export function toLineRef(value: string | PointPair): LineRef | null {
   return parseLineRef(value);
 }
 
-export { dslToGeometryModel, canonicalToGeometryModel } from "../runtime/compiler.js";
+export { dslToGeometryModel, canonicalToGeometryModel } from "../runtime/dsl-compiler.js";

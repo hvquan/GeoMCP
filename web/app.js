@@ -1,231 +1,273 @@
-    const messages = document.getElementById("messages");
-    const promptEl = document.getElementById("prompt");
-    const fileEl = document.getElementById("file");
-    const sendBtn = document.getElementById("send");
-    const clearBtn = document.getElementById("clear");
-    const modeEl = document.getElementById("mode");
-    const patchBar = document.getElementById("patch-bar");
-    const btnSolve = document.getElementById("btn-solve");
-    const btnPatch = document.getElementById("btn-patch");
+    // ── DOM refs ────────────────────────────────────────────────────────────────
+    const promptEl   = document.getElementById("prompt");
+    const runBtn     = document.getElementById("run");
+    const clearBtn   = document.getElementById("clear");
+    const figureArea = document.getElementById("figure-area");
+    const outDsl      = document.getElementById("out-dsl");
+    const outCanon    = document.getElementById("out-canonical");
+    const outScene    = document.getElementById("out-scene");
+    const copyDslBtn  = document.getElementById("copy-dsl");
+    const copyCanonBtn= document.getElementById("copy-canonical");
+    const copySceneBtn= document.getElementById("copy-scene");
 
-    // ── DSL Replay tab ────────────────────────────────────────────────────────
-    const tabChat   = document.getElementById("tab-chat");
-    const tabReplay = document.getElementById("tab-replay");
-    const panelChat   = document.getElementById("panel-chat");
-    const panelReplay = document.getElementById("panel-replay");
-    const dslInput    = document.getElementById("dsl-input");
-    const dslInputText = document.getElementById("dsl-input-text");
-    const dslSendBtn  = document.getElementById("dsl-send");
-    const dslClearBtn = document.getElementById("dsl-clear");
+    // Stubs required by interactive.js
+    let lastFigureState = null;
+    const patchBar = { classList: { add: () => {}, remove: () => {} } };
 
-    tabChat.addEventListener("click", () => {
-      tabChat.classList.add("active"); tabReplay.classList.remove("active");
-      panelChat.style.display = ""; panelReplay.style.display = "none";
-    });
-    tabReplay.addEventListener("click", () => {
-      tabReplay.classList.add("active"); tabChat.classList.remove("active");
-      panelReplay.style.display = ""; panelChat.style.display = "none";
-    });
-    dslClearBtn.addEventListener("click", () => {
-      fetch(apiUrl("/api/session/clear"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId })
-      }).catch(() => undefined).finally(() => {
-        messages.innerHTML = "";
-        promptEl.value = "";
-        fileEl.value = "";
-        dslInput.value = "";
-        dslInputText.value = "";
-        lastFigureState = null;
-        patchMode = false;
-        patchBar.classList.remove("visible");
-        btnSolve.classList.add("active");
-        btnPatch.classList.remove("active");
-        pushBubble("assistant", "Conversation cleared. Send a new problem to get started.");
+    // ── Copy buttons ─────────────────────────────────────────────────────────────
+    function wireCopy(btn, getPre) {
+      btn.addEventListener("click", () => {
+        navigator.clipboard.writeText(getPre().textContent || "").then(() => {
+          btn.classList.add("copied");
+          const prev = btn.textContent;
+          btn.textContent = "✓ Copied";
+          setTimeout(() => { btn.classList.remove("copied"); btn.textContent = prev; }, 1500);
+        });
       });
-    });
+    }
+    wireCopy(copyDslBtn,   () => outDsl);
+    wireCopy(copyCanonBtn, () => outCanon);
+    wireCopy(copySceneBtn, () => outScene);
 
-    dslSendBtn.addEventListener("click", async () => {
-      const rawDsl = dslInput.value.trim();
-      if (!rawDsl) return;
-      const inputText = dslInputText.value.trim();
-      const userLabel = inputText ? `[DSL Replay] ${inputText}` : "[DSL Replay]";
-      pushBubble("user", userLabel);
-      const progressUI = createProgressBubble();
-      progressUI.progress.textContent = "Replaying DSL...";
-
-      try {
-        const data = await streamSolve(
-          { dsl: rawDsl, input: inputText, solverIterations: 180, sessionId },
-          (msg) => { progressUI.progress.textContent = msg; },
-          (step, label, stepData) => {
-            const stepDetails = document.createElement("details");
-            stepDetails.style.cssText = "border:1px solid #e2e8f0;border-radius:6px;padding:0";
-            const stepSummary = document.createElement("summary");
-            stepSummary.style.cssText = "padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;user-select:none;background:#f8fafc;border-radius:6px";
-            stepSummary.textContent = `[${step}] ${label}`;
-            stepDetails.appendChild(stepSummary);
-            const pre = document.createElement("pre");
-            pre.style.cssText = "white-space:pre-wrap;font-size:11px;padding:8px 10px;margin:0;overflow:auto;max-height:400px;background:#fff";
-            pre.textContent = typeof stepData === "string" ? stepData : JSON.stringify(stepData, null, 2);
-            stepDetails.appendChild(pre);
-            progressUI.pipelineContainer.appendChild(stepDetails);
-            messages.scrollTop = messages.scrollHeight;
-          },
-          apiUrl("/api/replay-dsl")
-        );
-        progressUI.waiting.remove();
-        console.log("[replay] pipelineSteps count:", data.pipelineSteps?.length, data.pipelineSteps);
-        pushAssistantWithSvg(data);
-      } catch (err) {
-        progressUI.waiting.remove();
-        pushBubble("error", err.message || String(err));
-      }
-    });
-
-    // Tracks the last rendered interactive figure state so patch mode can add to it.
-    let lastFigureState = null; // { points, parsed, svg }
-    let patchMode = false;
-
-    btnSolve.addEventListener("click", () => {
-      patchMode = false;
-      btnSolve.classList.add("active");
-      btnPatch.classList.remove("active");
-    });
-    btnPatch.addEventListener("click", () => {
-      if (!lastFigureState) return;
-      patchMode = true;
-      btnPatch.classList.add("active");
-      btnSolve.classList.remove("active");
-    });
-    const SESSION_KEY = "geomcp_chat_session_id";
+    // ── API helpers ──────────────────────────────────────────────────────────────
     const configuredApiBase = (window.GEOMCP_API_BASE || "").replace(/\/$/, "");
     const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
     const apiBase = isLocalHost ? "" : configuredApiBase;
+    function apiUrl(path) { return apiBase ? `${apiBase}${path}` : path; }
 
-    function apiUrl(path) {
-      return apiBase ? `${apiBase}${path}` : path;
+    // ── Results panel helpers ────────────────────────────────────────────────────
+    const PENDING = "…";
+
+    function clearResults() {
+      outDsl.textContent   = PENDING;
+      outCanon.textContent = PENDING;
+      outScene.textContent = PENDING;
     }
 
-    function ensureSessionId() {
-      let id = localStorage.getItem(SESSION_KEY);
-      if (!id) {
-        id = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-        localStorage.setItem(SESSION_KEY, id);
-      }
-      return id;
+    function setResult(pre, data) {
+      pre.textContent = data == null ? "(none)" :
+        typeof data === "string" ? data : JSON.stringify(data, null, 2);
     }
 
-    const sessionId = ensureSessionId();
-
-    function pushBubble(role, text) {
+    // ── Figure helpers ───────────────────────────────────────────────────────────
+    function showLoading(message) {
+      figureArea.innerHTML = "";
       const div = document.createElement("div");
-      div.className = `bubble ${role}`;
-      div.textContent = text;
-      messages.appendChild(div);
-      messages.scrollTop = messages.scrollHeight;
-      return div;
+      div.className = "loading-state";
+      const spinner = document.createElement("span");
+      spinner.className = "loader";
+      div.appendChild(spinner);
+      const text = document.createElement("span");
+      text.textContent = message || "Processing…";
+      div.appendChild(text);
+      figureArea.appendChild(div);
+      return text;
     }
 
-    const COPY_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    function showError(message) {
+      figureArea.innerHTML = "";
+      const div = document.createElement("div");
+      div.className = "error-msg";
+      div.textContent = message;
+      figureArea.appendChild(div);
+    }
 
-    function makeCopyBtn(getTextFn) {
-      const btn = document.createElement("button");
-      btn.className = "copy-btn";
-      btn.innerHTML = COPY_ICON + " Copy";
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        navigator.clipboard.writeText(getTextFn()).then(() => {
-          btn.classList.add("copied");
-          btn.textContent = "✓ Copied";
-          setTimeout(() => {
-            btn.classList.remove("copied");
-            btn.innerHTML = COPY_ICON + " Copy";
-          }, 1500);
+    // ── Geo-interaction state (geo-interact.js / /api/canonical) ─────────────────
+    let _currentIr         = null;
+    let _currentFreePoints = {};
+    let _fixedScale        = null;
+    let _fixedOffX         = null;
+    let _fixedOffY         = null;
+    let _liveFetching      = false;
+    let _activeSvgWrap     = null;
+
+    function _lockScale(scene, svgEl) {
+      if (!svgEl) return;
+      const pts = scene?.points || [];
+      const canvasH = parseFloat(svgEl.getAttribute("height") || "1200");
+      for (const p of pts) {
+        if (typeof p.x !== "number") continue;
+        const g   = svgEl.querySelector(`g[data-point-id="${CSS.escape(p.id)}"]`);
+        const dot = g?.querySelector("circle");
+        if (!g || !dot) continue;
+        const cx = parseFloat(dot.getAttribute("cx"));
+        const cy = parseFloat(dot.getAttribute("cy"));
+        for (const p2 of pts) {
+          if (p2.id === p.id || typeof p2.x !== "number") continue;
+          const g2   = svgEl.querySelector(`g[data-point-id="${CSS.escape(p2.id)}"]`);
+          const dot2 = g2?.querySelector("circle");
+          if (!g2 || !dot2) continue;
+          const dmx = p2.x - p.x, dmy = p2.y - p.y;
+          const dcx = parseFloat(dot2.getAttribute("cx")) - cx;
+          const dcy = parseFloat(dot2.getAttribute("cy")) - cy;
+          if (Math.abs(dmx) < 1e-6 && Math.abs(dmy) < 1e-6) continue;
+          const scale = Math.abs(dmx) > Math.abs(dmy) ? dcx / dmx : -dcy / dmy;
+          if (!isFinite(scale) || Math.abs(scale) < 0.01) continue;
+          _fixedScale = scale;
+          _fixedOffX  = cx - p.x * scale;
+          _fixedOffY  = canvasH - cy - p.y * scale;
+          return;
+        }
+      }
+    }
+
+    function _applyAngleDrag(event, ptEnt, scene) {
+      const circEnt  = _currentIr.entities.find(e => e.id === ptEnt.construction.circle);
+      const centerId = circEnt?.construction?.center;
+      const ctr      = _currentFreePoints[centerId] ?? scene?.points?.find(p => p.id === centerId);
+      if (!ctr) return null;
+      const angle  = Math.atan2(event.newY - ctr.y, event.newX - ctr.x);
+      const angEnt = _currentIr.entities.find(e => e.id === ptEnt.construction.angle);
+      if (!angEnt) return null;
+      angEnt.construction.value = Math.round(angle * 100000) / 100000;
+      return angEnt.id;
+    }
+
+    function _applyRadiusDrag(event, scene) {
+      if (!_currentIr) return null;
+      const cirEntity = _currentIr.entities.find(e => e.id === event.circleId);
+      if (!cirEntity || cirEntity.construction?.type !== "circle_center_radius") return null;
+      const centerId = cirEntity.construction.center;
+      const fp       = _currentFreePoints[centerId];
+      const centerPt = fp ?? scene?.points?.find(p => p.id === centerId);
+      if (!centerPt) return null;
+      const newR = Math.sqrt((event.mouseX - centerPt.x) ** 2 + (event.mouseY - centerPt.y) ** 2);
+      if (!isFinite(newR) || newR < 0.01) return null;
+      const radParamId = cirEntity.construction.radius;
+      const radEntity  = _currentIr.entities.find(e => e.id === radParamId);
+      if (radEntity) radEntity.construction.value = Math.round(newR * 10000) / 10000;
+      return radParamId;
+    }
+
+    function _patchSvgElements(curSvg, newSvg, draggedPointId) {
+      for (const ng of newSvg.querySelectorAll("g[data-point-id]")) {
+        const pid = ng.getAttribute("data-point-id");
+        if (pid === draggedPointId) continue;
+        const cg = curSvg.querySelector(`g[data-point-id="${CSS.escape(pid)}"]`);
+        if (!cg) continue;
+        const ndot = ng.querySelector("circle"), cdot = cg.querySelector("circle");
+        if (ndot && cdot) {
+          cdot.setAttribute("cx", ndot.getAttribute("cx"));
+          cdot.setAttribute("cy", ndot.getAttribute("cy"));
+        }
+        const ntxt = ng.querySelector("text"), ctxt = cg.querySelector("text");
+        if (ntxt && ctxt) {
+          ctxt.setAttribute("x", ntxt.getAttribute("x"));
+          ctxt.setAttribute("y", ntxt.getAttribute("y"));
+        }
+      }
+      for (const nel of newSvg.querySelectorAll("[data-id]")) {
+        const id  = nel.getAttribute("data-id");
+        const cel = curSvg.querySelector(`[data-id="${CSS.escape(id)}"]`);
+        if (!cel || nel.tagName !== cel.tagName) continue;
+        if (nel.tagName === "line") {
+          for (const a of ["x1","y1","x2","y2"]) cel.setAttribute(a, nel.getAttribute(a) ?? "");
+        } else if (nel.tagName === "circle") {
+          for (const a of ["cx","cy","r"])       cel.setAttribute(a, nel.getAttribute(a) ?? "");
+        } else if (nel.tagName === "polygon" || nel.tagName === "polyline") {
+          cel.setAttribute("points", nel.getAttribute("points") ?? "");
+        } else if (nel.tagName === "path") {
+          cel.setAttribute("d", nel.getAttribute("d") ?? "");
+        }
+      }
+    }
+
+    async function _onGeoInteractMove(event, scene, _vb) {
+      if (!_currentIr) return;
+      if (event.type !== "drag_point" && event.type !== "drag_radius") return;
+      if (_liveFetching) return;
+      _liveFetching = true;
+      let draggedPointId = null;
+      if (event.type === "drag_point") {
+        const ptEnt = _currentIr.entities.find(e => e.id === event.pointId);
+        if (ptEnt?.construction?.type === "point_on_circle" && ptEnt.construction.angle) {
+          if (!_applyAngleDrag(event, ptEnt, scene)) { _liveFetching = false; return; }
+        } else {
+          _currentFreePoints[event.pointId] = { x: event.newX, y: event.newY };
+          draggedPointId = event.pointId;
+        }
+      } else {
+        if (!_applyRadiusDrag(event, scene)) { _liveFetching = false; return; }
+      }
+      try {
+        const resp = await fetch(apiUrl("/api/canonical"), {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            ir: _currentIr, freePoints: _currentFreePoints,
+            fixedScale: _fixedScale, fixedOffX: _fixedOffX, fixedOffY: _fixedOffY,
+          }),
         });
-      });
-      return btn;
+        const data = await resp.json();
+        if (data.svg) {
+          const tmp = document.createElement("div");
+          tmp.innerHTML = data.svg;
+          const newSvg = tmp.querySelector("svg");
+          const curSvg = _activeSvgWrap?.querySelector("svg");
+          if (newSvg && curSvg) _patchSvgElements(curSvg, newSvg, draggedPointId);
+        }
+      } catch (_) { /* ignore live errors */ }
+      finally { _liveFetching = false; }
     }
 
-    function pushAssistantWithSvg(payload) {
-      const div = document.createElement("div");
-      div.className = "bubble assistant";
-
-      const summary = document.createElement("div");
-      const lines = [
-        `Parser: ${payload.parserVersion}`,
-        `Diagnostics: ${(payload.diagnostics || []).length}`,
-        payload.recognizedText ? `Recognized text:\n${payload.recognizedText}` : ""
-      ].filter(Boolean).join("\n\n");
-      summary.textContent = lines;
-      div.appendChild(summary);
-
-      if (payload.warnings && payload.warnings.length) {
-        const warn = document.createElement("div");
-        warn.className = "meta";
-        warn.textContent = `Warnings: ${payload.warnings.join(" | ")}`;
-        div.appendChild(warn);
+    async function _onGeoInteractEnd(event, _scene, savedVB) {
+      if (!_currentIr) return;
+      if (event.type !== "drag_point" && event.type !== "drag_radius") return;
+      if (event.type === "drag_point") {
+        const ptEnt = _currentIr.entities.find(e => e.id === event.pointId);
+        if (ptEnt?.construction?.type === "point_on_circle" && ptEnt.construction.angle) {
+          _applyAngleDrag(event, ptEnt, _scene);
+        } else {
+          _currentFreePoints[event.pointId] = { x: event.newX, y: event.newY };
+        }
+      } else {
+        _applyRadiusDrag(event, _scene);
       }
+      try {
+        const resp = await fetch(apiUrl("/api/canonical"), {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            ir: _currentIr, freePoints: _currentFreePoints,
+            fixedScale: _fixedScale, fixedOffX: _fixedOffX, fixedOffY: _fixedOffY,
+          }),
+        });
+        const data = await resp.json();
+        if (data.svg && _activeSvgWrap) {
+          _activeSvgWrap.innerHTML = data.svg;
+          _startInteraction(data.scene, savedVB);
+        }
+      } catch (_err) { /* ignore */ }
+    }
+
+    function _startInteraction(scene, restoreViewBox) {
+      if (!_activeSvgWrap) return;
+      interactSvg(_activeSvgWrap, scene, restoreViewBox, {
+        onDragEnd:  _onGeoInteractEnd,
+        onDragMove: _onGeoInteractMove,
+      });
+    }
+
+    function showFigure(payload) {
+      figureArea.innerHTML = "";
+
+      const inner = document.createElement("div");
+      inner.className = "figure-inner";
 
       const wrap = document.createElement("div");
       wrap.className = "svg-wrap";
       wrap.innerHTML = payload.svg;
-      div.appendChild(wrap);
+      inner.appendChild(wrap);
 
-      let dragGraphPre = null;
-      if (payload.parsed) {
-        dragGraphPre = document.createElement("pre");
-        dragGraphPre.style.cssText = "white-space:pre-wrap;font-size:11px;margin-top:6px;padding:6px 8px;background:#f0f4ff;border:1px solid #c7d2fe;border-radius:4px;max-height:400px;overflow:auto";
-        dragGraphPre.textContent = "(drag a point to see the constraint graph)";
-        const liveGraphSummary = document.createElement("summary");
-        liveGraphSummary.style.cssText = "display:flex;align-items:center;gap:6px";
-        const liveGraphLabel = document.createElement("span");
-        liveGraphLabel.textContent = "Dependency Graph (cập nhật khi kéo điểm)";
-        liveGraphSummary.appendChild(liveGraphLabel);
-        liveGraphSummary.appendChild(makeCopyBtn(() => dragGraphPre.textContent));
-        const liveGraphDetails = document.createElement("details");
-        liveGraphDetails.open = true;
-        liveGraphDetails.appendChild(liveGraphSummary);
-        liveGraphDetails.appendChild(dragGraphPre);
-        div.appendChild(liveGraphDetails);
-
-        const interactionPre = document.createElement("pre");
-        const interactionDetails = document.createElement("details");
-        const interactionSummary = document.createElement("summary");
-        interactionSummary.style.cssText = "display:flex;align-items:center;gap:6px";
-        const interactionLabel = document.createElement("span");
-        interactionLabel.textContent = "Interaction Debug (drivers vs derived)";
-        interactionSummary.appendChild(interactionLabel);
-        interactionSummary.appendChild(makeCopyBtn(() => interactionPre.textContent));
-        interactionDetails.appendChild(interactionSummary);
-        interactionPre.style.whiteSpace = "pre-wrap";
-        interactionPre.style.fontSize = "12px";
-        interactionPre.style.marginTop = "8px";
-        interactionPre.textContent = JSON.stringify(summarizeInteractionModel(payload.parsed), null, 2);
-        interactionDetails.appendChild(interactionPre);
-
-        div.appendChild(interactionDetails);
-      }
-
-      const helpRow = document.createElement("div");
-      helpRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap";
-
-      const help = document.createElement("div");
-      help.className = "svg-help";
-      help.style.flex = "1";
-      help.textContent = "Interactive viewer: drag points to adjust, scroll to zoom, drag background to pan.";
-      helpRow.appendChild(help);
-
+      const toolbar = document.createElement("div");
+      toolbar.className = "figure-toolbar";
       const exportBtn = document.createElement("button");
       exportBtn.className = "ghost";
-      exportBtn.style.cssText = "font-size:12px;padding:5px 12px;flex-shrink:0";
       exportBtn.textContent = "Export HTML";
       exportBtn.addEventListener("click", () => {
         const svgEl = wrap.querySelector("svg");
         if (!svgEl) return;
-        const html = buildExportHtml(svgEl, payload.parsed || null);
+        const html = buildExportHtml(svgEl, null);
         const blob = new Blob([html], { type: "text/html" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -236,132 +278,44 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       });
-      helpRow.appendChild(exportBtn);
-      div.appendChild(helpRow);
+      toolbar.appendChild(exportBtn);
+      inner.appendChild(toolbar);
 
-      // Cache the viewport transform so syncDragToServer can pass math-space coords.
-      // The server already stores points in math-space; screenToSvg() (SVG CTM inverse)
-      // already returns math-space coords, so no further conversion is needed when the
-      // SVG uses the server-set viewBox.  We cache it for reference and future use.
-      if (payload.viewportTransform) {
-        wrap._viewportTransform = payload.viewportTransform;
+      if (payload.viewportTransform) wrap._viewportTransform = payload.viewportTransform;
+      figureArea.appendChild(inner);
+
+      // Use geo-interact.js + /api/canonical when we have the full scene/IR
+      _currentIr         = payload.canonical ?? null;
+      _currentFreePoints = payload.freePoints ? { ...payload.freePoints } : {};
+      _fixedScale = null; _fixedOffX = null; _fixedOffY = null;
+      _activeSvgWrap = wrap;
+      if (payload.scene && _currentIr) {
+        _lockScale(payload.scene, wrap.querySelector("svg"));
+        _startInteraction(payload.scene, null);
+      } else {
+        // Fallback: free-drag only (no constraint enforcement)
+        enhanceInteractiveSvg(wrap, null, null);
       }
 
-      enhanceInteractiveSvg(wrap, payload.parsed || null, dragGraphPre);
-
-      if (payload.pipelineSteps && payload.pipelineSteps.length) {
-        const pipeDetails = document.createElement("details");
-        pipeDetails.open = true;
-        const pipeSummary = document.createElement("summary");
-        pipeSummary.style.cssText = "display:flex;align-items:center;gap:6px";
-        const pipeLabel = document.createElement("span");
-        pipeLabel.style.flex = "1";
-        pipeLabel.textContent = `Pipeline (${payload.pipelineSteps.length} steps)`;
-        pipeSummary.appendChild(pipeLabel);
-        pipeSummary.appendChild(makeCopyBtn(() =>
-          payload.pipelineSteps.map((s) =>
-            `=== [${s.step}] ${s.label} ===\n` +
-            (typeof s.data === "string" ? s.data : JSON.stringify(s.data, null, 2))
-          ).join("\n\n")
-        ));
-        pipeDetails.appendChild(pipeSummary);
-
-        const container = document.createElement("div");
-        container.style.cssText = "margin-top:8px;display:flex;flex-direction:column;gap:4px";
-
+      // Fill the three result panes from the pipeline steps
+      if (payload.pipelineSteps) {
         for (const s of payload.pipelineSteps) {
-          const stepDetails = document.createElement("details");
-          stepDetails.style.cssText = "border:1px solid #e2e8f0;border-radius:6px;padding:0";
-
-          const pre = document.createElement("pre");
-          pre.style.cssText = "white-space:pre-wrap;font-size:11px;padding:8px 10px;margin:0;overflow:auto;max-height:400px;background:#fff";
-          pre.textContent = typeof s.data === "string" ? s.data : JSON.stringify(s.data, null, 2);
-          const stepSummary = document.createElement("summary");
-          stepSummary.style.cssText = "padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;user-select:none;background:#f8fafc;border-radius:6px;display:flex;align-items:center;gap:6px";
-          const stepLabel = document.createElement("span");
-          stepLabel.style.flex = "1";
-          stepLabel.textContent = `[${s.step}] ${s.label}`;
-          stepSummary.appendChild(stepLabel);
-          stepSummary.appendChild(makeCopyBtn(() => pre.textContent));
-          stepDetails.appendChild(stepSummary);
-          stepDetails.appendChild(pre);
-
-          container.appendChild(stepDetails);
+          if (s.label === "DSL result")       setResult(outDsl,   s.data);
+          if (s.label === "Canonical result") setResult(outCanon, s.data);
+          if (s.label === "Scene graph")      setResult(outScene, s.data);
         }
-
-        pipeDetails.appendChild(container);
-        div.appendChild(pipeDetails);
       }
-
-      messages.appendChild(div);
-      messages.scrollTop = messages.scrollHeight;
     }
 
-    function summarizeInteractionModel(parsed) {
-      const pointIds = Array.isArray(parsed?.points) ? parsed.points.map((it) => String(it).toUpperCase()) : [];
-      const derived = new Set();
-
-      for (const rel of Array.isArray(parsed?.midpoints) ? parsed.midpoints : []) {
-        if (rel?.point) derived.add(String(rel.point).toUpperCase());
-      }
-      for (const rel of Array.isArray(parsed?.pointsOnSegments) ? parsed.pointsOnSegments : []) {
-        if (rel?.point) derived.add(String(rel.point).toUpperCase());
-      }
-      for (const rel of Array.isArray(parsed?.lineIntersections) ? parsed.lineIntersections : []) {
-        if (rel?.point) derived.add(String(rel.point).toUpperCase());
-      }
-      for (const rel of Array.isArray(parsed?.perpendicularThroughPointIntersections) ? parsed.perpendicularThroughPointIntersections : []) {
-        if (rel?.intersection) derived.add(String(rel.intersection).toUpperCase());
-      }
-      for (const rel of Array.isArray(parsed?.tangentIntersections) ? parsed.tangentIntersections : []) {
-        if (rel?.intersection) derived.add(String(rel.intersection).toUpperCase());
-      }
-      for (const rel of Array.isArray(parsed?.namedTangents) ? parsed.namedTangents : []) {
-        if (rel?.linePoint) derived.add(String(rel.linePoint).toUpperCase());
-      }
-
-      return {
-        drivers: pointIds.filter((id) => !derived.has(id)),
-        derivedPoints: pointIds.filter((id) => derived.has(id)),
-        constraintCounts: {
-          pointsOnCircles: Array.isArray(parsed?.pointsOnCircles) ? parsed.pointsOnCircles.length : 0,
-          circlesByDiameter: Array.isArray(parsed?.circlesByDiameter) ? parsed.circlesByDiameter.length : 0,
-          midpoints: Array.isArray(parsed?.midpoints) ? parsed.midpoints.length : 0,
-          pointsOnSegments: Array.isArray(parsed?.pointsOnSegments) ? parsed.pointsOnSegments.length : 0,
-          lineIntersections: Array.isArray(parsed?.lineIntersections) ? parsed.lineIntersections.length : 0,
-          perpendiculars: Array.isArray(parsed?.perpendiculars) ? parsed.perpendiculars.length : 0,
-          perpendicularThroughPointIntersections: Array.isArray(parsed?.perpendicularThroughPointIntersections)
-            ? parsed.perpendicularThroughPointIntersections.length
-            : 0,
-          namedTangents: Array.isArray(parsed?.namedTangents) ? parsed.namedTangents.length : 0,
-          tangentIntersections: Array.isArray(parsed?.tangentIntersections) ? parsed.tangentIntersections.length : 0
-        }
-      };
-    }
-
+    // ── Export ───────────────────────────────────────────────────────────────────
     function buildExportHtml(svgEl, parsed) {
       let svgStr = new XMLSerializer().serializeToString(svgEl);
-      // Strip any baked-in overlay groups (tangent overlay lines drawn at render time).
-      // enhanceInteractiveSvg will recreate them dynamically when the exported file loads,
-      // so keeping the serialized copies would leave ghost lines at the original positions.
       svgStr = svgStr.replace(/<g\s[^>]*data-overlay="tangents"[^>]*>[\s\S]*?<\/g>/g, "");
       const parsedJson = JSON.stringify(parsed || null);
-
-      const helpers = [
-        distance.toString(),
-        parseNumber.toString(),
-        findNearestPoint.toString()
-      ].join("\n\n");
-
+      const helpers = [distance.toString(), parseNumber.toString(), findNearestPoint.toString()].join("\n\n");
       let enhanceFn = enhanceInteractiveSvg.toString();
-      enhanceFn = enhanceFn.replace(
-        "lastFigureState = { points, parsed, svgEl: svg };",
-        "/* export: no patch mode */"
-      );
-      enhanceFn = enhanceFn.replace(
-        'patchBar.classList.add("visible");',
-        "/* export: no patch mode */"
-      );
+      enhanceFn = enhanceFn.replace("lastFigureState = { points, parsed, svgEl: svg };", "/* export */");
+      enhanceFn = enhanceFn.replace('patchBar.classList.add("visible");', "/* export */");
 
       return `<!DOCTYPE html>
 <html lang="en">
@@ -373,37 +327,10 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; background: #f4efe6; overflow: hidden; }
     #container { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
-    .svg-wrap {
-      flex: 1;
-      background: #fff;
-      overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
+    .svg-wrap { flex: 1; background: #fff; overflow: hidden; display: flex; justify-content: center; align-items: center; }
     .svg-wrap svg { display: block; width: 100%; height: 100%; touch-action: none; }
-    .toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      padding: 6px 12px;
-      background: #f4efe6;
-      border-top: 1px solid #e5dcc8;
-      font-family: system-ui, sans-serif;
-      font-size: 12px;
-      color: #475569;
-      flex-shrink: 0;
-    }
-    .toolbar button {
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: 12px;
-      cursor: pointer;
-      background: #fff;
-      color: #1f2937;
-    }
+    .toolbar { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 6px 12px; background: #f4efe6; border-top: 1px solid #e5dcc8; font-family: system-ui, sans-serif; font-size: 12px; color: #475569; flex-shrink: 0; }
+    .toolbar button { border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; background: #fff; color: #1f2937; }
     .toolbar button:hover { background: #e2e8f0; }
     .dragging-point { cursor: grabbing; }
     circle[data-center-id] { cursor: col-resize; }
@@ -411,25 +338,22 @@
 </head>
 <body>
   <div id="container">
-    <div class="svg-wrap" id="svg-wrap">${svgStr}</div>
+    <div class="svg-wrap" id="svg-wrap">\${svgStr}</div>
     <div class="toolbar">
       <span>Drag points &bull; Scroll to zoom &bull; Drag background to pan</span>
       <button id="btn-fullscreen">&#x26F6; Full screen</button>
     </div>
   </div>
   <script>
-    const PARSED = ${parsedJson};
-    ${helpers}
-    ${enhanceFn}
+    const PARSED = \${parsedJson};
+    \${helpers}
+    \${enhanceFn}
     window.addEventListener("DOMContentLoaded", function () {
       enhanceInteractiveSvg(document.getElementById("svg-wrap"), PARSED, null);
       document.getElementById("btn-fullscreen").addEventListener("click", function () {
         const el = document.documentElement;
-        if (!document.fullscreenElement) {
-          el.requestFullscreen && el.requestFullscreen();
-        } else {
-          document.exitFullscreen && document.exitFullscreen();
-        }
+        if (!document.fullscreenElement) { el.requestFullscreen && el.requestFullscreen(); }
+        else { document.exitFullscreen && document.exitFullscreen(); }
       });
       document.addEventListener("fullscreenchange", function () {
         const btn = document.getElementById("btn-fullscreen");
@@ -441,65 +365,9 @@
 </html>`;
     }
 
-
-    function renderTurn(turn) {
-      pushBubble("user", turn.userText || "[empty]");
-      pushAssistantWithSvg({
-        parserVersion: turn.parserVersion,
-        diagnostics: turn.diagnostics,
-        recognizedText: turn.recognizedText,
-        warnings: turn.warnings,
-        svg: turn.svg,
-        parsed: turn.parsed || null,
-        llmDebug: turn.llmDebug || null
-      });
-    }
-
-    async function loadHistory() {
-      try {
-        const resp = await fetch(apiUrl(`/api/session?sessionId=${encodeURIComponent(sessionId)}`));
-        if (!resp.ok) {
-          return;
-        }
-        const data = await resp.json();
-        if (!data.ok || !Array.isArray(data.turns)) {
-          return;
-        }
-        if (data.turns.length === 0) {
-          pushBubble("assistant", "Hello! Send a geometry problem as text or image and I'll draw it as an SVG.");
-          return;
-        }
-        for (const turn of data.turns) {
-          renderTurn(turn);
-        }
-      } catch (_err) {
-        pushBubble("assistant", "Hello! Send a geometry problem as text or image and I'll draw it as an SVG.");
-      }
-    }
-
-    function createProgressBubble() {
-      const waiting = document.createElement("div");
-      waiting.className = "bubble assistant";
-      const title = document.createElement("div");
-      title.innerHTML = '<span class="loader"></span>Processing...';
-      waiting.appendChild(title);
-
-      const progress = document.createElement("div");
-      progress.className = "progress";
-      progress.textContent = "Initializing";
-      waiting.appendChild(progress);
-
-      const pipelineContainer = document.createElement("div");
-      pipelineContainer.style.cssText = "margin-top:10px;display:flex;flex-direction:column;gap:4px";
-      waiting.appendChild(pipelineContainer);
-
-      messages.appendChild(waiting);
-      messages.scrollTop = messages.scrollHeight;
-      return { waiting, progress, pipelineContainer };
-    }
-
-    async function streamSolve(payload, onProgress, onStep, endpoint) {
-      const url = endpoint || apiUrl("/api/solve/stream");
+    // ── Streaming solve ──────────────────────────────────────────────────────────
+    async function streamSolve(payload, onProgress) {
+      const url = apiUrl("/api/solve/stream");
       const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -519,24 +387,23 @@
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
+        if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed) {
-            continue;
-          }
+          if (!trimmed) continue;
           const event = JSON.parse(trimmed);
           if (event.type === "progress") {
             onProgress(`${event.stage}: ${event.message}`);
           } else if (event.type === "step") {
             pipelineSteps.push({ step: event.step, label: event.label, data: event.data });
-            onStep?.(event.step, event.label, event.data);
+            // Live-fill panels as steps arrive
+            if (event.label === "DSL result")       setResult(outDsl,   event.data);
+            if (event.label === "Canonical result") setResult(outCanon, event.data);
+            if (event.label === "Scene graph")      setResult(outScene, event.data);
           } else if (event.type === "result") {
             finalPayload = event.payload;
           } else if (event.type === "error") {
@@ -545,167 +412,40 @@
         }
       }
 
-      if (!finalPayload) {
-        throw new Error("No result returned from stream");
-      }
-
+      if (!finalPayload) throw new Error("No result returned from stream");
       return { ...finalPayload, pipelineSteps };
     }
 
-    function readFileAsDataUrl(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error("Cannot read image"));
-        reader.readAsDataURL(file);
-      });
-    }
-
-    async function submitPatch() {
-      const message = promptEl.value.trim();
-      if (!message || !lastFigureState) return;
-
-      pushBubble("user", message);
-      const progressUI = createProgressBubble();
-      progressUI.progress.textContent = "Adding to figure...";
-
-      try {
-        // Collect current interactive positions from the live points array.
-        const existingPoints = lastFigureState.points.map((p) => ({ id: p.id, x: p.x, y: p.y }));
-
-        // Collect current visual segments from the SVG (last rendered canvas).
-        const lastSvg = lastFigureState.svgEl;
-        const existingSegments = lastSvg
-          ? Array.from(lastSvg.querySelectorAll("line[data-a][data-b]")).map((l) => ({
-              a: l.getAttribute("data-a"),
-              b: l.getAttribute("data-b")
-            })).filter((s) => s.a && s.b)
-          : [];
-
-        // Collect current circles.
-        const existingCircles = lastSvg
-          ? Array.from(lastSvg.querySelectorAll("circle[data-center-id]")).map((c) => ({
-              centerId: c.getAttribute("data-center-id"),
-              r: parseFloat(c.getAttribute("r") || "0")
-            })).filter((c) => c.centerId && c.r > 0)
-          : [];
-
-        const resp = await fetch(apiUrl("/api/patch"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            message,
-            existingParsed: lastFigureState.parsed,
-            existingPoints,
-            existingSegments,
-            existingCircles,
-            parserMode: modeEl.value
-          })
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.error || `HTTP ${resp.status}`);
-        }
-
-        const data = await resp.json();
-        progressUI.waiting.remove();
-        promptEl.value = "";
-        fileEl.value = "";
-        pushAssistantWithSvg(data);
-      } catch (error) {
-        progressUI.waiting.remove();
-        pushBubble("error", error.message || String(error));
-      }
-    }
-
+    // ── Submit ───────────────────────────────────────────────────────────────────
     async function submit() {
-      if (patchMode && lastFigureState) {
-        await submitPatch();
-        return;
-      }
-
       const message = promptEl.value.trim();
-      const file = fileEl.files && fileEl.files[0];
-      if (!message && !file) {
-        pushBubble("error", "Please enter a problem or select an image before sending.");
-        return;
-      }
+      if (!message) { promptEl.focus(); return; }
 
-      let imageDataUrl = "";
-      if (file) {
-        imageDataUrl = await readFileAsDataUrl(file);
-      }
-
-      const userPreview = message || "[Image sent for OCR]";
-      pushBubble("user", userPreview);
-
-      const progressUI = createProgressBubble();
+      runBtn.disabled = true;
+      clearResults();
+      const progressText = showLoading("Initializing…");
 
       try {
         const data = await streamSolve({
-          sessionId,
           message,
-          imageDataUrl,
-          parserMode: modeEl.value,
           solverIterations: 180
-        }, (msg) => {
-          progressUI.progress.textContent = msg;
-        }, (step, label, stepData) => {
-          const stepDetails = document.createElement("details");
-          stepDetails.style.cssText = "border:1px solid #e2e8f0;border-radius:6px;padding:0";
+        }, (msg) => { progressText.textContent = msg; });
 
-          const stepSummary = document.createElement("summary");
-          stepSummary.style.cssText = "padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;user-select:none;background:#f8fafc;border-radius:6px";
-          stepSummary.textContent = `[${step}] ${label}`;
-          stepDetails.appendChild(stepSummary);
-
-          const pre = document.createElement("pre");
-          pre.style.cssText = "white-space:pre-wrap;font-size:11px;padding:8px 10px;margin:0;overflow:auto;max-height:400px;background:#fff";
-          pre.textContent = typeof stepData === "string" ? stepData : JSON.stringify(stepData, null, 2);
-          stepDetails.appendChild(pre);
-
-          progressUI.pipelineContainer.appendChild(stepDetails);
-          messages.scrollTop = messages.scrollHeight;
-        });
-
-        progressUI.waiting.remove();
-        promptEl.value = "";
-        fileEl.value = "";
-        pushAssistantWithSvg(data);
+        showFigure(data);
       } catch (error) {
-        progressUI.waiting.remove();
-        pushBubble("error", error.message || String(error));
+        showError(error.message || String(error));
+      } finally {
+        runBtn.disabled = false;
       }
     }
 
-    sendBtn.addEventListener("click", submit);
-    promptEl.addEventListener("keydown", (evt) => {
-      if ((evt.metaKey || evt.ctrlKey) && evt.key === "Enter") {
-        submit();
-      }
-    });
+    // ── Event listeners ──────────────────────────────────────────────────────────
+    runBtn.addEventListener("click", submit);
     clearBtn.addEventListener("click", () => {
-      fetch(apiUrl("/api/session/clear"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId })
-      }).catch(() => undefined).finally(() => {
-        messages.innerHTML = "";
-        promptEl.value = "";
-        fileEl.value = "";
-        lastFigureState = null;
-        patchMode = false;
-        patchBar.classList.remove("visible");
-        btnSolve.classList.add("active");
-        btnPatch.classList.remove("active");
-        pushBubble("assistant", "Conversation cleared. Send a new problem to get started.");
-      });
+      promptEl.value = "";
+      clearResults();
+      promptEl.focus();
     });
-
-    if (window.location.hostname.endsWith("github.io") && !apiBase) {
-      pushBubble("error", "GEOMCP_API_BASE is not configured in web/config.js. Please set it to your backend URL.");
-    }
-
-    loadHistory();
+    promptEl.addEventListener("keydown", (evt) => {
+      if ((evt.metaKey || evt.ctrlKey) && evt.key === "Enter") submit();
+    });

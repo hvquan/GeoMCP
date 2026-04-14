@@ -6,12 +6,9 @@ import {
   Tool
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { parseGeometryProblem } from "./parsing/index.js";
-import { buildLayout, renderSvg } from "./geometry/index.js";
 import { runGeometryPipeline } from "./pipeline/index.js";
 
 const TOOL_NAME = "read_and_draw_geometry";
-const TOOL_NAME_V2 = "read_and_draw_geometry_v2_llm";
 
 const inputSchema: Tool["inputSchema"] = {
   type: "object",
@@ -19,6 +16,10 @@ const inputSchema: Tool["inputSchema"] = {
     problem: {
       type: "string",
       description: "De bai hinh hoc bang van ban"
+    },
+    llmModel: {
+      type: "string",
+      description: "Tuy chon model LLM (neu bo qua se dung bien moi truong hoac mac dinh)"
     }
   },
   required: ["problem"]
@@ -31,50 +32,9 @@ const tool: Tool = {
   inputSchema
 };
 
-const inputSchemaV2: Tool["inputSchema"] = {
-  type: "object",
-  properties: {
-    problem: {
-      type: "string",
-      description: "De bai hinh hoc bang van ban"
-    },
-    llmModel: {
-      type: "string",
-      description: "Tuy chon model LLM (neu bo qua se dung bien moi truong hoac mac dinh)"
-    },
-    fallbackToHeuristic: {
-      type: "boolean",
-      description: "Neu LLM loi thi fallback ve parser cu"
-    },
-    useConstraintSolver: {
-      type: "boolean",
-      description: "Bat bo giai rang buoc tong quat cho version 2"
-    },
-    solverIterations: {
-      type: "number",
-      description: "So vong lap cho constraint solver"
-    }
-  },
-  required: ["problem"]
-};
-
-const toolV2: Tool = {
-  name: TOOL_NAME_V2,
-  description:
-    "Version 2: dung LLM de parse de hinh hoc, sau do tinh toa do va tra ve SVG",
-  inputSchema: inputSchemaV2
-};
-
 const argsValidator = z.object({
-  problem: z.string().min(1)
-});
-
-const argsValidatorV2 = z.object({
   problem: z.string().min(1),
-  llmModel: z.string().min(1).optional(),
-  fallbackToHeuristic: z.boolean().optional().default(true),
-  useConstraintSolver: z.boolean().optional().default(true),
-  solverIterations: z.number().int().positive().max(2000).optional().default(160)
+  llmModel: z.string().min(1).optional()
 });
 
 const server = new Server(
@@ -91,70 +51,27 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
-    tools: [tool, toolV2]
+    tools: [tool]
   };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name !== TOOL_NAME && request.params.name !== TOOL_NAME_V2) {
+  if (request.params.name !== TOOL_NAME) {
     throw new Error(`Unknown tool: ${request.params.name}`);
   }
 
-  let result: unknown;
+  const { problem, llmModel } = argsValidator.parse(request.params.arguments ?? {});
 
-  if (request.params.name === TOOL_NAME) {
-    const { problem } = argsValidator.parse(request.params.arguments ?? {});
+  const pipelineResult = await runGeometryPipeline(problem, {
+    model: llmModel,
+  });
 
-    const parsed = parseGeometryProblem(problem);
-    const layout = buildLayout(parsed);
-    const svg = renderSvg(layout);
-
-    result = {
-      parserVersion: "v1-heuristic",
-      parsed,
-      layout,
-      svg
-    };
-  } else {
-    const {
-      problem,
-      llmModel,
-      fallbackToHeuristic,
-      useConstraintSolver,
-      solverIterations
-    } = argsValidatorV2.parse(
-      request.params.arguments ?? {}
-    );
-
-    let parsed;
-    let parserVersion = "v2-llm-dsl";
-    let warnings: string[] = [];
-    let canonical;
-
-    const pipelineResult = await runGeometryPipeline(problem, {
-      model: llmModel,
-      solverIterations,
-      fallbackToHeuristic,
-      useConstraintSolver
-    });
-    parsed = pipelineResult.parsed;
-    canonical = pipelineResult.canonical;
-    parserVersion = pipelineResult.parserVersion;
-    warnings = pipelineResult.warnings;
-    const layout = pipelineResult.layout;
-    const svg = pipelineResult.svg;
-    result = {
-      parserVersion,
-      solver: useConstraintSolver
-        ? { enabled: true, iterations: solverIterations }
-        : { enabled: false },
-      warnings,
-      canonical: canonical ?? undefined,
-      parsed,
-      layout,
-      svg
-    };
-  }
+  const result = {
+    parserVersion: pipelineResult.parserVersion,
+    warnings: pipelineResult.warnings,
+    dsl: pipelineResult.dsl,
+    svg: pipelineResult.svg
+  };
 
   return {
     content: [
@@ -175,3 +92,5 @@ main().catch((error) => {
   console.error("GeoMCP failed to start:", error);
   process.exit(1);
 });
+
+

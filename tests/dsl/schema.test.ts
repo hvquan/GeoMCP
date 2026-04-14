@@ -6,7 +6,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { dslSchema } from "../../src/dsl/schema.js";
+import { dslSchema } from "../../src/dsl/geomcp-schema.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 

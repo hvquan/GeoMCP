@@ -2,6 +2,416 @@
 
 ## System Overview
 
+GeoMCP is a multi-stage geometry problem-solving system. It converts a natural language geometry problem (Vietnamese, English, or Swedish) into an SVG visualization through language normalization, LLM parsing, DSL normalization, constraint compilation, and solving.
+
+The system exposes two execution surfaces:
+- **MCP tool** (`src/index.ts`) — single tool `read_and_draw_geometry`, responds to MCP calls from AI agents
+- **HTTP server** (`src/webapp.ts`) — interactive browser UI with draggable points
+
+```
+INPUT: Natural Language Problem (VI / EN / SV)
+        ↓
+    ┌──────────────────────────────────┐
+    │  Language Normalization          │  detect lang + canonical phrase map
+    │  language/                       │  Layers 1–2 + dynamic few-shot (L3)
+    └──────────────╮───────────────────╯
+                   ↓
+    ┌──────────────────────────────────┐
+    │  LLM Parsing Pipeline            │  Prompt build (L3) → call (L4)
+    │  llm/ + parsing/                 │  → extract (L5) → repair (L6)
+    └──────────────╮───────────────────╯
+                   ↓
+    ┌──────────────────────────────────┐
+    │  DSL Validation & Normalization  │  Schema (L7) → normalize (L8)
+    │  dsl/geomcp-schema.ts            │  token repair, alias fix, synthesis
+    │  dsl/normalize.ts                │
+    └──────────────╮───────────────────╯
+                   ↓
+    ┌──────────────────────────────────┐
+    │  DSL Adapter                     │  RawDSL → Canonical Geometry IR
+    │  dsl/adapter.ts                  │  constructs entity graph
+    └──────────────╮───────────────────╯
+                   ↓
+    ┌──────────────────────────────────┐
+    │  Runtime Compiler                │  Canonical IR → RuntimeGraph
+    │  runtime/compiler.ts             │  topo-sort, dependency edges
+    └──────────────╮───────────────────╯
+                   ↓
+    ┌──────────────────────────────────┐
+    │  Solver                          │  propagate coordinates
+    │  solver/                         │  initSolvedState → solveAll
+    └──────────────╮───────────────────╯
+                   ↓
+    ┌──────────────────────────────────┐
+    │  Scene Graph + Layout + Style    │  SolvedState → render-ready scene
+    │  scene/                          │
+    └──────────────╮───────────────────╯
+                   ↓
+    ┌──────────────────────────────────┐
+    │  SVG Renderer                    │  StyledScene → SVG string
+    │  renderer/svg.ts                 │
+    └──────────────┬───────────────────┘
+                   ↓
+OUTPUT: SVG (returned via MCP) or interactive HTML (via webapp)
+```
+
+## Source Directory Structure
+
+```
+src/
+├── index.ts              — MCP server entry point (single tool: read_and_draw_geometry)
+├── webapp.ts             — HTTP server for interactive browser UI
+│
+├── language/             — Layers 1–3: multilingual normalization (VI/EN/SV)
+│   ├── canonical-language.ts — types: DetectedLanguage, CanonicalPhrase,
+│   │                           NormalizedGeometryInput
+│   ├── detect.ts         — Layer 1: detectLanguage() — Unicode diacritics + vocabulary
+│   ├── term-lexicon.ts   — geometry term glossary (VI/EN/SV ↔ canonical)
+│   ├── normalize-phrases.ts — Layer 2: detectCanonicalPhrases()
+│   │                          maps surface forms → canonical phrase types
+│   ├── fewshot-selector.ts  — Layer 3: selectFewShots()
+│   └── index.ts          — detectAndNormalize(text) → NormalizedGeometryInput
+│
+├── llm/                  — Layers 3–6: LLM integration (renamed from ai/)
+│   ├── prompt-builder.ts — Layer 3: buildGeometrySystemPrompt() + dynamic variant
+│   ├── llm-adapter.ts    — Layer 4: callLlm() (OpenAI-compatible HTTP API)
+│   ├── output-extractor.ts — Layer 5: extractJsonObject() — strip markdown, find { }
+│   ├── repair.ts         — Layer 6: repairDslJson() + buildRepairPrompt()
+│   └── examples/
+│       └── dsl-examples.ts — LLM few-shot example bank (source of truth for prompt)
+│
+├── parsing/              — LLM orchestration (Layers 1–8)
+│   ├── dslParser.ts      — parseGeometryDslWithLLM() — wires L1–L8
+│   ├── parser.ts         — v1 heuristic regex-based parser (legacy)
+│   └── index.ts          — barrel exports
+│
+├── dsl/                  — DSL types, validation, normalization, and adaptation
+│   ├── dsl.ts            — GeometryDsl TypeScript types + expandDslMacros()
+│   ├── geomcp-schema.ts  — Layer 7: Zod validation schema for LLM output DSL
+│   ├── raw-schema.ts     — RawDSL types (GeoMCP format: objects/constraints/constructions)
+│   ├── normalize.ts      — Layer 8: normalizeRawDsl() → NormalizeResult
+│   │                       fixes token splits, deduplicates, x-suffix alias repair
+│   ├── adapter.ts        — adaptDsl() — RawDSL → CanonicalGeometryIR
+│   │                       deferred-point guard, degenerate-foot guard
+│   ├── canonical.ts      — CanonicalProblem types + dslToCanonical() (legacy path)
+│   ├── canonicalizer.ts  — normalizeModelIds(), displayLabel()
+│   ├── desugar.ts        — expandDslMacros() — macro shapes → primitives
+│   └── index.ts          — barrel exports
+│
+├── canonical/
+│   └── schema.ts         — CanonicalGeometryIR v1 type definitions
+│                           (engine contract between adapter and compiler)
+│
+├── runtime/
+│   ├── compiler.ts       — compileToRuntimeGraph(): CanonicalGeometryIR → RuntimeGraph
+│   │                       topo-sort + dependency edge extraction
+│   ├── dsl-compiler.ts   — dslToGeometryModel() (legacy test path)
+│   ├── enrichment.ts     — enrichModelForV2() (used by legacy compiler)
+│   ├── schema.ts         — RuntimeGraph / RuntimeNode type definitions
+│   └── edit-policy.ts    — edit-safety policies for interactive mutations
+│
+├── solver/
+│   ├── state.ts          — initSolvedState(): seed free-point coords
+│   └── recompute.ts      — solveAll() / recompute(): propagate constraint math
+│
+├── scene/
+│   ├── schema.ts         — SceneGraph / SceneNode type definitions
+│   ├── schema.zod.ts     — Zod validator for SceneGraph
+│   ├── builder.ts        — buildSceneGraph(): SolvedState → SceneGraph
+│   ├── layout.ts         — layout(): assign coords to unpositioned points
+│   ├── viewport.ts       — computeViewport(): bounding box + scale
+│   ├── style.ts          — applyStyles(): math-space → canvas-space + defaults
+│   ├── annotations.ts    — label and annotation helpers
+│   ├── parse.ts          — SceneGraph deserialization
+│   └── validate.ts       — SceneGraph structural validation
+│
+├── renderer/
+│   └── svg.ts            — renderSvg(): StyledScene → SVG string
+│
+├── pipeline/
+│   ├── index.ts          — runGeometryPipeline() — transport-agnostic end-to-end
+│   ├── run-from-canonical.ts  — runFromCanonical(): Canonical IR → SVG
+│   ├── run-from-geomcp-dsl.ts — runFromGeomcpDsl(): raw LLM JSON → SVG
+│   ├── run-interaction.ts     — interactive drag re-solve pipeline
+│   └── run.ts            — lower-level run helpers
+│
+├── interaction/          — interactive drag/edit types and state
+│   ├── types.ts
+│   ├── state.ts
+│   ├── hit-test.ts
+│   └── update.ts
+│
+├── model/                — Legacy GeometryModel types + re-export shims
+│   ├── types.ts          — GeometryModel, LayoutModel, all constraint interfaces
+│   ├── v2Model.ts        — shim → runtime/enrichment.ts
+│   ├── normalize.ts      — shim → dsl/canonicalizer.ts
+│   └── index.ts
+│
+├── geometry/             — Legacy iterative constraint solver (still used by webapp)
+│   ├── constraint-solver.ts
+│   ├── solver.ts         — refineLayoutWithSolver()
+│   ├── drag.ts
+│   └── index.ts
+│
+├── layout/               — Legacy layout + scene assembly
+│   └── layout.ts         — buildLayout()
+│
+└── render/               — Legacy SVG renderer (still used by webapp)
+    ├── scene-graph.ts
+    ├── svg.ts
+    └── viewport.ts
+```
+
+---
+
+## Layer Numbering
+
+| Layer | File(s) | Responsibility |
+|---|---|---|
+| 1 | `language/detect.ts` | Language Detection — Unicode diacritics + vocabulary heuristics |
+| 2 | `language/normalize-phrases.ts` | Geometry Language Normalization — surface forms → canonical phrase types |
+| 3 | `language/fewshot-selector.ts` + `llm/prompt-builder.ts` | Prompt Builder — dynamic few-shot selection + full system prompt |
+| 4 | `llm/llm-adapter.ts` | LLM Adapter — OpenAI-compatible HTTP call + config resolution |
+| 5 | `llm/output-extractor.ts` | Output Extractor — strip markdown, extract `{…}` block |
+| 6 | `llm/repair.ts` | Repair / Retry — structural JSON fixes + semantic re-prompt |
+| 7 | `dsl/geomcp-schema.ts` | DSL Schema Validation — Zod: raw LLM JSON → typed + validated |
+| 8 | `dsl/normalize.ts` | DSL Normalization — token repair, x-suffix alias, point synthesis |
+| — | `dsl/adapter.ts` | DSL Adapter — RawDSL → CanonicalGeometryIR (deferred-point, degenerate-foot) |
+| — | `runtime/compiler.ts` | Runtime Compiler — Canonical IR → RuntimeGraph (topo-sort) |
+| — | `solver/state.ts` + `solver/recompute.ts` | Solver — propagate construction math from free variables |
+| — | `scene/builder.ts` + `scene/layout.ts` + `scene/style.ts` | Scene Pipeline — SolvedState → render-ready positioned+styled scene |
+| — | `renderer/svg.ts` | SVG Renderer — StyledScene → SVG string (Y-axis flip in style.ts) |
+
+---
+
+## Module Architecture
+
+### Language Layer (`src/language/`)
+
+**Purpose**: Detect input language and normalize surface-form geometry terms into canonical phrase types before any LLM call. Reduces the LLM's job to structural extraction regardless of input language.
+
+**Supported languages**: Vietnamese (`vi`), English (`en`), Swedish (`sv`).
+
+**Integration point**: `detectAndNormalize(text) → NormalizedGeometryInput`. Called as the first step in `runGeometryPipeline`.
+
+**Processing chain**:
+```
+detectLanguage(text)           — Layer 1: Unicode diacritics + vocabulary heuristics
+ → detectCanonicalPhrases()    — Layer 2: regex lexicon scan → CanonicalPhrase[]
+ → NormalizedGeometryInput     — { language, canonicalPhrases }
+```
+
+`NormalizedGeometryInput` is used in two ways downstream:
+1. **Dynamic few-shot selection** (`fewshot-selector.ts`, L3): up to 3 examples scored by language + topic overlap
+2. **User message hint**: canonical phrase types appended to LLM user message
+
+---
+
+### LLM Layer (`src/llm/`)
+
+**Purpose**: Isolate all LLM integration details. Previously in `src/ai/`.
+
+Config resolution (all via env vars): `GEOMCP_OPENAI_BASE_URL`, `GEOMCP_OPENAI_API_KEY`, `GEOMCP_OPENAI_MODEL`. Local Ollama endpoints skip the API key check.
+
+**Layers**:
+- L3: `prompt-builder.ts` — static + dynamic prompt building; few-shots sourced from `llm/examples/dsl-examples.ts`
+- L4: `llm-adapter.ts` — `callLlm()`
+- L5: `output-extractor.ts` — `extractJsonObject()`
+- L6: `repair.ts` — `repairDslJson()` (6 structural repairs pre-schema) + `buildRepairPrompt()` (semantic retry)
+
+**Few-shot source of truth**: `llm/examples/dsl-examples.ts` — 40 hand-crafted examples. Updated by `npm run test:capture`.
+
+---
+
+### DSL Normalization Pipeline (`src/dsl/normalize.ts` + `src/dsl/adapter.ts`)
+
+This is the critical stage that converts unstable LLM output into a geometrically consistent Canonical IR.
+
+#### `normalize.ts` (Layer 8) — `normalizeRawDsl(input) → NormalizeResult`
+
+Transforms raw LLM JSON before adapting:
+1. **Midpoint token splitting** — `"of": ["BC","D"]` → separate point tokens
+2. **Intersection truncation** — `"of": [l1,l2,l3]` → `[l1,l2]`
+3. **Missing point synthesis** — auto-adds point objects for all referenced letters
+4. **Deduplication** — removes duplicate point declarations
+5. **x-suffix alias repair (Rule N18)** — `"Ax"` in constraint refs → `"Cx"` when only `Cx` is registered; emits `NormalizeWarning { code: "line_alias_repaired", ... }`
+
+Returns `{ dsl: RawDSL, warnings: NormalizeWarning[] }`.
+
+#### `adapter.ts` — `adaptDsl(dsl) → AdapterResult`
+
+Converts `RawDSL` → `CanonicalGeometryIR`. Key normalization behaviours:
+
+- **Deferred-point guard**: when `AB ⊥ CD` and `B` appears in an intersection constraint, only build `ln.AB`; let the intersection create `pt.B`
+- **Degenerate-foot guard**: when `AB ⊥ CD` and `A` is a named endpoint of `CD`, use `perpendicular_through_point + point_on_line` instead of degenerate `foot_of_perpendicular(A, CD) = A`
+- **Declared-line alias check**: when resolving a `_declaredLines` entry with x-suffix pattern (e.g. `"Ax"`), checks against already-registered tangent lines before falling back to `free_line`
+- **Missing circle inference**: `tangent` constructions without `circle` field infer from `ctx.firstCircleCenter()`
+
+Warnings from both normalize and adapter are merged by callers into a single `warnings: string[]`.
+
+---
+
+### Canonical Geometry IR (`src/canonical/schema.ts`)
+
+Engine-internal contract between the adapter and the runtime compiler.
+
+```
+CanonicalGeometryIR {
+  version: "canonical-geometry/v1"
+  entities: CanonicalEntity[]     — points, lines, circles, segments, triangles,
+                                    parameters (radius, angle, length)
+  relations?: CanonicalRelation[] — tangent_line, diameter_of_circle, perpendicular, …
+}
+```
+
+**Design rules**: no pixel coordinates, no render concerns, no interaction affordances. Declarative: describes WHAT, not HOW to compute. `construction` is the primary semantic carrier.
+
+**Construction types** (selected):
+- Point: `free_point`, `line_intersection`, `foot_of_perpendicular`, `point_on_circle`, `point_on_line`, `antipode`, `midpoint`, `angle_bisector_foot`
+- Line: `free_line`, `line_through_points`, `tangent_at_point`, `perpendicular_through_point`, `parallel_through_point`
+- Circle: `circle_center_radius`, `circle_center_through_point`, `circumcircle`, `incircle`
+- Parameters: `free_radius`, `free_angle`, `free_length` — first-class draggable scalars
+
+---
+
+### Runtime Compiler (`src/runtime/compiler.ts`)
+
+`compileToRuntimeGraph(ir) → RuntimeGraph`
+
+1. Converts each `CanonicalEntity` → `RuntimeNode`
+2. Extracts dependency edges from `construction` fields
+3. Topologically sorts (Kahn's algorithm — roots first, cycle detection)
+4. Builds fast-lookup indexes (`byId`, `downstream`)
+
+**No coordinates** are computed here — the compiler only builds the graph structure.
+
+**Cycle detection**: if a dep ID doesn't exist in the node map, its edge inflates target in-degree without ever decrementing → stuck nodes → `"Cycle detected"` error. The normalize + adapter pipeline prevents this by ensuring all referenced IDs are registered before use.
+
+---
+
+### Solver (`src/solver/`)
+
+- `initSolvedState(graph, freePoints)` — seeds free-point coords; parameters seeded from `RuntimeParameterNode.value`
+- `solveAll(graph, state)` — traverses topo-sorted nodes top-down, evaluates each construction, writes coordinates to state
+
+No iterative convergence — the topo-sorted graph means each node is computed exactly once in dependency order.
+
+---
+
+### Scene Pipeline (`src/scene/`)
+
+```
+SolvedState
+  → buildSceneGraph()  (scene/builder.ts)  → SceneGraph
+  → layout()           (scene/layout.ts)   → PositionedScene
+  → computeViewport()  (scene/viewport.ts) → ViewportTransform
+  → applyStyles()      (scene/style.ts)    → StyledScene (canvas-space, Y-down)
+  → renderSvg()        (renderer/svg.ts)   → SVG string
+```
+
+Y-axis flip (math Y-up → SVG Y-down) happens in `applyStyles()`.
+
+---
+
+### Entry Points
+
+#### MCP Server (`src/index.ts`)
+
+Single tool: `read_and_draw_geometry`
+- Input: `problem: string`, optional `llmModel: string`
+- Calls `runGeometryPipeline(problem, { model: llmModel })`
+- Returns JSON with `parserVersion`, `svg`, and intermediate debug fields
+
+#### Pipeline Module (`src/pipeline/`)
+
+`runGeometryPipeline(text, options) → GeometryPipelineResult`
+- Options: `model?`, `solverIterations?`, `parseOnly?`
+- Always uses `parseGeometryDslWithLLM` (DSL strict mode); throws on LLM parse failure
+- Result includes: `svg`, `parserVersion`, `warnings`, `dsl`, `dslExpanded`, `rawDslJson`, `georenderRawDsl`, `georenderCanonical`, `georenderErrors`, `scene`, `normalized`, `llmDebug`
+
+`runFromGeomcpDsl(rawInput) → GeomcpDslResult`
+- Merge point for normalize + adapter + compile + solve + scene + SVG
+- `normalizeRawDsl()` warnings prefixed `[normalize:code]`, merged with adapter warnings
+
+`runFromCanonical(ir, freePoints) → { scene, svg, errors }`
+- Low-level: skips all LLM and DSL stages; compiles IR directly
+
+#### HTTP Server (`src/webapp.ts`)
+
+Interactive web interface. Key endpoints:
+- `POST /api/solve` — runs full `runGeometryPipeline`
+- `POST /api/dsl` — runs `normalizeRawDsl → adaptDsl → runFromCanonical` (debugging)
+- `POST /api/canonical` — re-renders from existing canonical IR after drag
+- `POST /api/drag` — interactive re-solve via `run-interaction.ts`
+
+---
+
+## Key Design Decisions
+
+### Single MCP tool (v3 strict)
+The system previously exposed v1 (heuristic) and v2 (legacy LLM) tools. Now there is a single `read_and_draw_geometry` tool that always uses the DSL-strict LLM path. No fallback, no parser mode selection. `parserVersion` is always `"v3-dsl-llm-strict"`.
+
+### Two-stage DSL normalization
+Raw LLM output goes through two normalization layers before reaching the compiler:
+1. `normalizeRawDsl()` — DSL-level: token repair, alias repair, point synthesis
+2. `adaptDsl()` — adapter-level: construction inference, deferred-point guard, degenerate-foot guard, declared-line alias check
+
+This separation keeps each layer focused and independently testable.
+
+### Canonical IR as engine contract
+`canonical/schema.ts` defines the boundary between the parsing+normalization world and the runtime engine. The adapter produces it; the compiler consumes it. Neither the adapter nor the compiler know about the other's implementation details.
+
+### Topo-sorted evaluation (not iterative)
+The new solver (`solver/recompute.ts`) computes each construction once in dependency order. This replaces the old iterative convergence loop (`refineLayoutWithSolver`, 160 passes). No convergence threshold needed; no drift.
+
+The old geometry solver (`geometry/`, `layout/`) remains for the webapp's legacy `buildLayout` path.
+
+### Prompt as code
+`GEOMETRY_SYSTEM_PROMPT` is defined in `llm/prompt-builder.ts`. The dynamic variant uses few-shots from `llm/examples/dsl-examples.ts` (40 examples). `resources/prompts/system-prompt.txt` is a manual-testing snapshot only — not read at runtime.
+
+### Y-axis flip in scene pipeline
+All internal coordinates use math Y-up until `applyStyles()` in the scene pipeline, which converts to SVG Y-down. The old renderer flipped in `renderSvg()`.
+
+---
+
+## File Reference
+
+```
+resources/
+├── problem1.txt          — sample geometry problem (Vietnamese)
+├── problem2.txt          — sample geometry problem
+├── tests.txt             — test corpus of 67 progressively complex problems
+└── prompts/              — prompt snapshots for manual LLM testing
+    ├── system-prompt.txt — snapshot only — NOT read at runtime
+    ├── user-prompt-template.txt
+    └── test-manual.sh    — runs a problem through ollama
+
+releases/
+├── v1-heuristic.md       — v1 release notes
+└── v2-llm-parser.md      — v2 release notes
+
+web/                      — browser UI assets
+    index.html            — main interactive UI (Clear button, no mode dropdown)
+    app.js                — frontend JS
+    config.js / geometry-helpers.js / interactive.js / style.css
+    playground.html / step-draw.html
+
+tests/
+├── capture-llm.mts       — regenerates llm/examples/dsl-examples.ts via LLM
+├── replay-all.mts        — replays all examples through pipeline without LLM
+├── run-jsonc.mts         — runs a single JSONC snapshot
+├── ai/                   — LLM output extractor + repair tests
+├── dsl/                  — schema, desugar, canonical tests
+├── geometry/             — geometry constraint solver tests
+├── language/             — multilingual normalization tests
+├── parsing/              — parser tests
+├── pipeline/             — end-to-end pipeline tests (heuristic path)
+└── runtime/              — compiler tests
+```
+
+
+## System Overview
+
 GeoMCP is a multi-stage geometry problem-solving system. It converts a natural language geometry problem (Vietnamese, English, or Swedish) into an SVG visualization through language normalization, LLM parsing, constraint compilation, and layout solving.
 
 The system exposes two execution surfaces:
