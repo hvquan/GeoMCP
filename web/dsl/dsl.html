@@ -100,6 +100,13 @@
     }
     #run:hover  { background: #6d28d9; }
     #run:active { background: #5b21b6; }
+    #clear-input {
+      background: transparent; color: #6b7280; border: 1.5px solid #d1d5db;
+      border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s, background .15s;
+    }
+    #clear-input:hover  { color: #dc2626; border-color: #fca5a5; background: #fff1f2; }
+    #clear-input:active { color: #b91c1c; border-color: #f87171; background: #fee2e2; }
     #errors {
       font-size: 11px; color: #dc2626; white-space: pre-wrap;
       max-height: 80px; overflow: auto;
@@ -202,6 +209,7 @@
         <div id="warnings-box"></div>
         <div id="run-row">
           <button id="run">▶ Run Pipeline</button>
+          <button id="clear-input">✕ Clear</button>
         </div>
         <div id="errors"></div>
       </footer>

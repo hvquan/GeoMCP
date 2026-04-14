@@ -21,6 +21,7 @@ const errBox           = document.getElementById('errors');
 const warnBox          = document.getElementById('warnings-box');
 const snapshotSelect   = document.getElementById('snapshot-select');
 const runBtn           = document.getElementById('run');
+const clearInputBtn    = document.getElementById('clear-input');
 const copyDslBtn       = document.getElementById('copy-dsl');
 const copyCanoBtn      = document.getElementById('copy-canonical');
 const copySceneBtn     = document.getElementById('copy-scene');
@@ -130,6 +131,13 @@ async function runPipeline() {
 }
 
 runBtn.addEventListener('click', runPipeline);
+
+clearInputBtn.addEventListener('click', () => {
+  dslInput.value = '';
+  errBox.textContent  = '';
+  warnBox.textContent = '';
+  dslInput.focus();
+});
 
 dslInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {

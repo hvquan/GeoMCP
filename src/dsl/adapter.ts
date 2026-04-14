@@ -687,6 +687,51 @@ function postProcess(ctx: Ctx) {
   }
 }
 
+/**
+ * Scan the raw targets array for any two-uppercase-letter names (e.g. "AC", "BD", "AB")
+ * and auto-create segments for them when both named points are known.
+ * Handles:
+ *   - { type: "statement", text: "AC + BD = AB" }  → extracts AC, BD, AB
+ *   - { type: "right_angle", triangle: "AOB" }      → extracts AO, OB, AB
+ *   - any string field on any target object
+ */
+function createSegmentsFromTargets(targets: unknown[], ctx: Ctx) {
+  const twoUpperRe = /\b([A-Z]{2})\b/g;
+
+  function scanText(text: string) {
+    for (const m of text.matchAll(twoUpperRe)) {
+      const [a, b] = [m[1][0], m[1][1]];
+      if (ctx.hasPoint(a) && ctx.hasPoint(b) && !ctx.hasSeg(a, b)) {
+        ctx.ensureSegment(a, b);
+      }
+    }
+  }
+
+  function scanTriple(name: string) {
+    // e.g. "AOB" → pairs AO, OB, AB
+    if (/^[A-Z]{3}$/.test(name)) {
+      for (let i = 0; i < 3; i++) {
+        const a = name[i], b = name[(i + 1) % 3];
+        if (ctx.hasPoint(a) && ctx.hasPoint(b) && !ctx.hasSeg(a, b)) {
+          ctx.ensureSegment(a, b);
+        }
+      }
+    }
+  }
+
+  for (const t of targets) {
+    if (!t || typeof t !== "object") continue;
+    for (const [key, val] of Object.entries(t as Record<string, unknown>)) {
+      if (typeof val !== "string") continue;
+      if (key === "triangle" || key === "vertices") {
+        scanTriple(val);
+      } else {
+        scanText(val);
+      }
+    }
+  }
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function adaptDsl(dsl: RawDSL): AdapterResult {
@@ -701,6 +746,9 @@ export function adaptDsl(dsl: RawDSL): AdapterResult {
 
   // 3. Post-processing
   postProcess(ctx);
+
+  // 4. Auto-create segments mentioned in targets (e.g. "AC + BD = AB", triangle "AOB")
+  createSegmentsFromTargets(dsl.targets ?? [], ctx);
 
   return {
     canonical:  { version: "canonical-geometry/v1", entities: ctx.entities },
