@@ -1,53 +1,97 @@
     // ── DOM refs ────────────────────────────────────────────────────────────────
-    const promptEl   = document.getElementById("prompt");
-    const runBtn     = document.getElementById("run");
-    const clearBtn   = document.getElementById("clear");
-    const figureArea = document.getElementById("figure-area");
-    const outDsl      = document.getElementById("out-dsl");
-    const outCanon    = document.getElementById("out-canonical");
-    const outScene    = document.getElementById("out-scene");
-    const copyDslBtn  = document.getElementById("copy-dsl");
-    const copyCanonBtn= document.getElementById("copy-canonical");
-    const copySceneBtn= document.getElementById("copy-scene");
+    const promptEl    = document.getElementById("prompt");
+    const runBtn      = document.getElementById("run");
+    const clearBtn    = document.getElementById("clear");
+    const figureArea  = document.getElementById("figure-area");
+    const pipelineStepsEl = document.getElementById("pipeline-steps");
 
     // Stubs required by interactive.js
     let lastFigureState = null;
     const patchBar = { classList: { add: () => {}, remove: () => {} } };
 
-    // ── Copy buttons ─────────────────────────────────────────────────────────────
-    function wireCopy(btn, getPre) {
-      btn.addEventListener("click", () => {
-        navigator.clipboard.writeText(getPre().textContent || "").then(() => {
-          btn.classList.add("copied");
-          const prev = btn.textContent;
-          btn.textContent = "✓ Copied";
-          setTimeout(() => { btn.classList.remove("copied"); btn.textContent = prev; }, 1500);
+    // ── Pipeline panel ───────────────────────────────────────────────────────────
+    let _stepCounter = 0;
+
+    function clearPipelineSteps() {
+      _stepCounter = 0;
+      pipelineStepsEl.innerHTML = '<div class="pipeline-empty">Running…</div>';
+    }
+
+    function addPipelineStep(step, label, data) {
+      // Remove the empty/running placeholder on first step
+      const empty = pipelineStepsEl.querySelector(".pipeline-empty");
+      if (empty) empty.remove();
+
+      _stepCounter++;
+      const text = data == null ? "(none)"
+        : typeof data === "string" ? data
+        : JSON.stringify(data, null, 2);
+
+      const stepEl = document.createElement("div");
+      stepEl.className = "pipeline-step";
+      stepEl.setAttribute("data-label", label);
+
+      const header = document.createElement("div");
+      header.className = "pipeline-step-header";
+
+      const badge = document.createElement("span");
+      badge.className = "pipeline-step-badge";
+      badge.textContent = String(_stepCounter);
+
+      const labelEl = document.createElement("span");
+      labelEl.className = "pipeline-step-label";
+      labelEl.textContent = label;
+
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "pipeline-step-copy";
+      copyBtn.textContent = "Copy";
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.classList.add("copied");
+          copyBtn.textContent = "✓";
+          setTimeout(() => { copyBtn.classList.remove("copied"); copyBtn.textContent = "Copy"; }, 1500);
         });
       });
+
+      const toggle = document.createElement("span");
+      toggle.className = "pipeline-step-toggle";
+      toggle.textContent = "▶";
+
+      header.appendChild(badge);
+      header.appendChild(labelEl);
+      header.appendChild(copyBtn);
+      header.appendChild(toggle);
+
+      const body = document.createElement("div");
+      body.className = "pipeline-step-body";
+
+      const pre = document.createElement("pre");
+      pre.className = "pipeline-step-pre";
+      pre.textContent = text;
+      body.appendChild(pre);
+
+      header.addEventListener("click", () => {
+        const isOpen = body.classList.toggle("open");
+        toggle.textContent = isOpen ? "▼" : "▶";
+      });
+
+      stepEl.appendChild(header);
+      stepEl.appendChild(body);
+      pipelineStepsEl.appendChild(stepEl);
+
+      // Auto-expand key steps
+      if (label === "DSL result" || label === "Canonical result" || label === "Scene graph") {
+        body.classList.add("open");
+        toggle.textContent = "▼";
+      }
     }
-    wireCopy(copyDslBtn,   () => outDsl);
-    wireCopy(copyCanonBtn, () => outCanon);
-    wireCopy(copySceneBtn, () => outScene);
 
     // ── API helpers ──────────────────────────────────────────────────────────────
     const configuredApiBase = (window.GEOMCP_API_BASE || "").replace(/\/$/, "");
     const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
     const apiBase = isLocalHost ? "" : configuredApiBase;
     function apiUrl(path) { return apiBase ? `${apiBase}${path}` : path; }
-
-    // ── Results panel helpers ────────────────────────────────────────────────────
-    const PENDING = "…";
-
-    function clearResults() {
-      outDsl.textContent   = PENDING;
-      outCanon.textContent = PENDING;
-      outScene.textContent = PENDING;
-    }
-
-    function setResult(pre, data) {
-      pre.textContent = data == null ? "(none)" :
-        typeof data === "string" ? data : JSON.stringify(data, null, 2);
-    }
 
     // ── Figure helpers ───────────────────────────────────────────────────────────
     function showLoading(message) {
@@ -307,15 +351,6 @@
         // Fallback: free-drag only (no constraint enforcement)
         enhanceInteractiveSvg(wrap, null, null);
       }
-
-      // Fill the three result panes from the pipeline steps
-      if (payload.pipelineSteps) {
-        for (const s of payload.pipelineSteps) {
-          if (s.label === "DSL result")       setResult(outDsl,   s.data);
-          if (s.label === "Canonical result") setResult(outCanon, s.data);
-          if (s.label === "Scene graph")      setResult(outScene, s.data);
-        }
-      }
     }
 
     // ── Export ───────────────────────────────────────────────────────────────────
@@ -532,10 +567,7 @@ ${interactJs}
             onProgress(`${event.stage}: ${event.message}`);
           } else if (event.type === "step") {
             pipelineSteps.push({ step: event.step, label: event.label, data: event.data });
-            // Live-fill panels as steps arrive
-            if (event.label === "DSL result")       setResult(outDsl,   event.data);
-            if (event.label === "Canonical result") setResult(outCanon, event.data);
-            if (event.label === "Scene graph")      setResult(outScene, event.data);
+            addPipelineStep(event.step, event.label, event.data);
           } else if (event.type === "result") {
             finalPayload = event.payload;
           } else if (event.type === "error") {
@@ -554,7 +586,7 @@ ${interactJs}
       if (!message) { promptEl.focus(); return; }
 
       runBtn.disabled = true;
-      clearResults();
+      clearPipelineSteps();
       const progressText = showLoading("Initializing…");
 
       try {
@@ -575,7 +607,8 @@ ${interactJs}
     runBtn.addEventListener("click", submit);
     clearBtn.addEventListener("click", () => {
       promptEl.value = "";
-      clearResults();
+      clearPipelineSteps();
+      pipelineStepsEl.innerHTML = '<div class="pipeline-empty">Run a problem to see pipeline steps.</div>';
       promptEl.focus();
     });
     promptEl.addEventListener("keydown", (evt) => {

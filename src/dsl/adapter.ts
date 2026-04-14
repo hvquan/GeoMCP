@@ -324,8 +324,71 @@ function processConstraints(allC: RawConstraint[], ctx: Ctx) {
 
       // ── perpendicular ─────────────────────────────────────────────────────
       case "perpendicular": {
-        const line1Name = c.line1 as string;
-        const line2Name = c.line2 as string;
+        const line1Name  = c.line1 as string;
+        const line2Name  = c.line2 as string;
+        // "intersect-at" (preferred) or legacy "at": the foot point where line1 meets line2.
+        const atFoot     = ((c as any)["intersect-at"] ?? (c as any).at) as string | undefined;
+        // "through": line1 passes through this point (auxiliary perpendicular construction).
+        const throughPt  = (c as any).through as string | undefined;
+
+        // ── "through" shorthand: {"type":"perpendicular","line1":"l1","line2":"CE","through":"O"}
+        // Means: create line l1 through O, perpendicular to CE. No foot point needed.
+        if (throughPt && !parseTwoPointName(line1Name)) {
+          if (!ctx.hasLine(line2Name)) {
+            const pts2 = parseTwoPointName(line2Name);
+            if (pts2 && ctx.hasPoint(pts2[0]) && ctx.hasPoint(pts2[1])) {
+              ctx.ensureLineFromPoints(line2Name, pts2[0], pts2[1]);
+            }
+          }
+          if (ctx.hasPoint(throughPt) && ctx.hasLine(line2Name) && !ctx.hasLine(line1Name)) {
+            const line1Id = `ln.${line1Name}`;
+            ctx.regLine(line1Name, line1Id);
+            ctx.add({ id: line1Id, kind: "line",
+                      construction: { type: "perpendicular_through_point",
+                                      point: ctx.pid(throughPt), toLine: ctx.lid(line2Name) } });
+          }
+          absorbed.add(c);
+          break;
+        }
+
+        // ── "intersect-at" shorthand: {"type":"perpendicular","line1":"EH","line2":"CD","intersect-at":"H"}
+        // Means: EH ⊥ CD and H is the foot. No separate intersection needed.
+        // H may already exist as a free point (declared in objects) — promote it.
+        if (atFoot && (!ctx.hasPoint(atFoot) || ctx.freePoints[ctx.pid(atFoot)] !== undefined)) {
+          // Ensure line2 exists
+          if (!ctx.hasLine(line2Name)) {
+            const pts2 = parseTwoPointName(line2Name);
+            if (pts2 && ctx.hasPoint(pts2[0]) && ctx.hasPoint(pts2[1])) {
+              ctx.ensureLineFromPoints(line2Name, pts2[0], pts2[1]);
+            }
+          }
+          const pts1 = parseTwoPointName(line1Name);
+          if (pts1 && ctx.hasLine(line2Name)) {
+            const fromName = pts1[0] === atFoot ? pts1[1] : pts1[0];
+            if (ctx.hasPoint(fromName)) {
+              const footId = ctx.pid(atFoot);
+              if (ctx.freePoints[footId] !== undefined) {
+                // Promote free point → foot_of_perpendicular derived point
+                delete ctx.freePoints[footId];
+                const idx = ctx.entities.findIndex(e => e.id === footId);
+                const construction = { type: "foot_of_perpendicular",
+                  fromPoint: ctx.pid(fromName), toLine: ctx.lid(line2Name) };
+                if (idx >= 0) {
+                  ctx.entities[idx] = { id: footId, kind: "point", label: atFoot,
+                    origin: "derived", construction } as CanonicalEntity;
+                }
+              } else {
+                ctx.addDerivedPoint(atFoot, { type: "foot_of_perpendicular",
+                  fromPoint: ctx.pid(fromName), toLine: ctx.lid(line2Name) } as any);
+              }
+              ctx.ensureLineFromPoints(line1Name, fromName, atFoot);
+              ctx.ensureSegment(fromName, atFoot);
+              absorbed.add(c);
+              break;
+            }
+          }
+        }
+
         const key = [line1Name, line2Name].sort().join("|");
         const matchingInter = (interByPair.get(key) ?? []).find(i => !absorbed.has(i));
 
@@ -355,14 +418,16 @@ function processConstraints(allC: RawConstraint[], ctx: Ctx) {
                       construction: { type: "line_through_points", a: ctx.pid(fromName), b: ctx.pid(footName) } });
           } else {
             // Anonymous line (l1, OA, ...) ⊥ line2 — find through-point
-            const throughName = inferThroughPoint(line1Name, ctx);
+            const throughName = (throughPt ?? inferThroughPoint(line1Name, ctx));
             const line2Id = ctx.lid(line2Name);
             if (throughName && ctx.hasPoint(throughName)) {
-              const line1Id = `ln.${line1Name}`;
-              ctx.regLine(line1Name, line1Id);
-              ctx.add({ id: line1Id, kind: "line",
-                        construction: { type: "perpendicular_through_point", point: ctx.pid(throughName), toLine: line2Id } });
-              ctx.addDerivedPoint(footName, { type: "line_intersection", line1: line1Id, line2: line2Id } as any);
+              if (!ctx.hasLine(line1Name)) {
+                const line1Id = `ln.${line1Name}`;
+                ctx.regLine(line1Name, line1Id);
+                ctx.add({ id: line1Id, kind: "line",
+                          construction: { type: "perpendicular_through_point", point: ctx.pid(throughName), toLine: line2Id } });
+              }
+              ctx.addDerivedPoint(footName, { type: "line_intersection", line1: ctx.lid(line1Name), line2: line2Id } as any);
             } else {
               ctx.warn(`Cannot resolve perpendicular origin for "${line1Name}" ⊥ "${line2Name}"`);
             }
@@ -419,9 +484,9 @@ function processConstraints(allC: RawConstraint[], ctx: Ctx) {
               ctx.ensureLineFromPoints(line1Name, a, b);
             }
           } else {
-            const throughName = inferThroughPoint(line1Name, ctx);
+            const throughName = (throughPt ?? inferThroughPoint(line1Name, ctx));
             const line2Id = ctx.lid(line2Name);
-            if (throughName && ctx.hasPoint(throughName)) {
+            if (throughName && ctx.hasPoint(throughName) && !ctx.hasLine(line1Name)) {
               const line1Id = `ln.${line1Name}`;
               ctx.regLine(line1Name, line1Id);
               ctx.add({ id: line1Id, kind: "line",
@@ -777,6 +842,155 @@ function promoteMidpointTargets(targets: unknown[], ctx: Ctx) {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
+/**
+ * Step 6 repair: fill in geometric constructions the LLM forgot to emit.
+ *
+ * (a) PERPENDICULAR FOOT repair:
+ *     For every declared segment XY where X is a point_on_circle and Y is still
+ *     a free point, and a diameter line exists — place Y as foot_of_perpendicular
+ *     from X onto the diameter line.
+ *
+ * (b) TANGENT repair:
+ *     For every declared line whose name matches the pattern "[P]t" (e.g. "Dt")
+ *     where P is a point_on_circle — add a tangent entity for that line if none
+ *     was created by the tangent constraint handler.
+ */
+function repairOrphanFootFromTargets(ctx: Ctx, targets: unknown[], diameterLineId: string | null): void {
+  if (!diameterLineId) return;
+  for (const t of targets) {
+    if (!t || typeof t !== "object") continue;
+    const target = t as Record<string, unknown>;
+    if (target.type !== "midpoint") continue;
+    const seg = target.segment;
+    if (!Array.isArray(seg) || seg.length !== 2) continue;
+    const [a, b] = seg as [string, string];
+    // Try both orderings: find which is on_circle and which is free
+    for (const [srcName, footName] of [[a, b], [b, a]]) {
+      const srcEnt = ctx.entities.find(e => e.id === ctx.pid(srcName));
+      const footId = ctx.pid(footName);
+      if (!srcEnt || ctx.freePoints[footId] === undefined) continue;
+      if ((srcEnt.construction as any)?.type !== "point_on_circle") continue;
+      const srcAngleId = (srcEnt.construction as any)?.angle as string | undefined;
+      if (srcAngleId === `apar.${srcName}`) continue; // diameter endpoint
+      // Repair: place foot as foot_of_perpendicular from src onto diameter
+      delete ctx.freePoints[footId];
+      const idx = ctx.entities.findIndex(e => e.id === footId);
+      const construction = { type: "foot_of_perpendicular",
+        fromPoint: ctx.pid(srcName), toLine: diameterLineId };
+      if (idx >= 0) {
+        ctx.entities[idx] = { id: footId, kind: "point", label: footName,
+          origin: "derived", construction } as CanonicalEntity;
+      }
+      ctx.ensureLineFromPoints(`${srcName}${footName}`, srcName, footName);
+      ctx.ensureSegment(srcName, footName);
+      ctx.warn(`[repair] placed ${footName} as foot_of_perpendicular from ${srcName} onto diameter (via midpoint target)`);
+      break;
+    }
+  }
+}
+
+function repairMissingGeometry(ctx: Ctx, targets: unknown[]): void {
+  // Find the two diameter point names:
+  //   p1 = point_on_circle where angle param is named "apar.{p1}" (fixed at π)
+  //   p2 = antipode of p1
+  let diamP1: string | null = null;
+  let diamP2: string | null = null;
+  for (const [ptName] of ctx.pointIds) {
+    const ent = ctx.entities.find(e => e.id === ctx.pid(ptName));
+    if (!ent) continue;
+    const c = ent.construction as any;
+    if (c?.type === "point_on_circle" && c?.angle === `apar.${ptName}`) {
+      diamP1 = ptName;
+    } else if (c?.type === "antipode") {
+      diamP2 = ptName;
+    }
+  }
+
+  // Ensure a line entity exists for the diameter (CD), creating it if needed.
+  let diameterLineId: string | null = null;
+  if (diamP1 && diamP2) {
+    const lineName = `${diamP1}${diamP2}`;
+    diameterLineId = ctx.ensureLineFromPoints(lineName, diamP1, diamP2);
+  }
+
+  // (a) Perpendicular foot repair
+  if (diameterLineId) {
+    // segIds keys are "A+B" (raw point names, no pt. prefix)
+    const visited = new Set<string>();
+    for (const ab of ctx.segIds.keys()) {
+      const plus = ab.indexOf("+");
+      if (plus < 0) continue;
+      const aName = ab.slice(0, plus);
+      const bName = ab.slice(plus + 1);
+      const pairKey = [aName, bName].sort().join("+");
+      if (visited.has(pairKey)) continue;
+      visited.add(pairKey);
+
+      // Check each ordered pair (source, foot)
+      for (const [srcName, footName] of [[aName, bName], [bName, aName]]) {
+        const srcEnt = ctx.entities.find(e => e.id === ctx.pid(srcName));
+        const footId = ctx.pid(footName);
+        if (!srcEnt || ctx.freePoints[footId] === undefined) continue;
+        if ((srcEnt.construction as any)?.type !== "point_on_circle") continue;
+
+        // Skip diameter endpoints — their angle param is named after themselves (apar.C)
+        // Generic on-circle points (E) use numeric angle params (apar.0, apar.1, …)
+        const srcAngleId = (srcEnt.construction as any)?.angle as string | undefined;
+        if (srcAngleId === `apar.${srcName}`) continue; // diameter endpoint, not a foot source
+
+        // footName is free and srcName is on circle — place foot on diameter
+        delete ctx.freePoints[footId];
+        const idx = ctx.entities.findIndex(e => e.id === footId);
+        const construction = { type: "foot_of_perpendicular",
+          fromPoint: ctx.pid(srcName), toLine: diameterLineId };
+        if (idx >= 0) {
+          ctx.entities[idx] = { id: footId, kind: "point", label: footName,
+            origin: "derived", construction } as CanonicalEntity;
+        }
+        // Ensure the line and segment exist
+        ctx.ensureLineFromPoints(`${srcName}${footName}`, srcName, footName);
+        ctx.ensureSegment(srcName, footName);
+        ctx.warn(`[repair] placed ${footName} as foot_of_perpendicular from ${srcName} onto diameter`);
+        break; // only repair each foot once
+      }
+    }
+    // Also scan midpoint targets for foot points not declared as segments
+    repairOrphanFootFromTargets(ctx, targets, diameterLineId);
+  }
+
+  // (b) Tangent repair: line "Dt" where D is point_on_circle
+  for (const [lineName, lineId] of ctx.lineIds) {
+    if (lineName.length !== 2 || lineName[1] !== "t") continue;
+    const ptName = lineName[0];
+    if (!ctx.hasPoint(ptName)) continue;
+    const ptEnt = ctx.entities.find(e => e.id === ctx.pid(ptName));
+    const ptType = (ptEnt?.construction as any)?.type;
+    if (ptType !== "point_on_circle" && ptType !== "antipode") continue;
+
+    // Check if a tangent entity already exists for this line
+    const alreadyHasTangent = ctx.entities.some(e =>
+      e.kind === "line" && (e.construction as any)?.type === "tangent_at_point"
+    );
+    void alreadyHasTangent;
+    // More specifically: check if the line is already a tangent_at_point
+    const lineEnt = ctx.entities.find(e => e.id === lineId);
+    if ((lineEnt?.construction as any)?.type === "tangent_at_point") continue;
+
+    // Find the circle
+    const circId = (ptEnt?.construction as any)?.circle;
+    if (!circId) continue;
+
+    // Replace free_line with tangent_at_point
+    const idx = ctx.entities.findIndex(e => e.id === lineId);
+    if (idx >= 0 && (ctx.entities[idx].construction as any)?.type === "free_line") {
+      ctx.entities[idx] = { id: lineId, kind: "line", label: lineName,
+        construction: { type: "tangent_at_point", circle: circId, point: ctx.pid(ptName) }
+      } as unknown as CanonicalEntity;
+      ctx.warn(`[repair] replaced free_line "${lineName}" with tangent_at_point at ${ptName}`);
+    }
+  }
+}
+
 export function adaptDsl(dsl: RawDSL): AdapterResult {
   const ctx = new Ctx();
 
@@ -796,6 +1010,9 @@ export function adaptDsl(dsl: RawDSL): AdapterResult {
   // 5. Promote midpoint targets: if a target says "N = midpoint(E,H)" and N is
   //    still a free point, derive its position geometrically from E and H.
   promoteMidpointTargets(dsl.targets ?? [], ctx);
+
+  // 6. Repair geometry the LLM forgot: perpendicular feet and tangent lines.
+  repairMissingGeometry(ctx, dsl.targets ?? []);
 
   return {
     canonical:  { version: "canonical-geometry/v1", entities: ctx.entities },

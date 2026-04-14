@@ -11,7 +11,7 @@
 
     <!-- Input bar -->
     <div class="input-bar">
-      <textarea id="prompt" placeholder="Enter geometry problem…" rows="4"></textarea>
+      <textarea id="prompt" placeholder="Enter geometry problem…"></textarea>
       <div class="input-controls">
         <button id="run">&#9654; Run</button>
         <button id="clear">&#10005; Clear</button>
@@ -23,32 +23,13 @@
       <div class="figure-area" id="figure-area">
         <div class="placeholder" id="placeholder">Enter a geometry problem above and press Run.</div>
       </div>
-      <div class="results-panel">
-
-        <div class="results-section">
-          <div class="results-section-header">
-            <span>DSL Result</span>
-            <button class="copy-btn" id="copy-dsl">Copy</button>
-          </div>
-          <pre id="out-dsl" class="results-pre"></pre>
+      <div class="pipeline-panel" id="pipeline-panel">
+        <div class="pipeline-panel-header">
+          <span>Pipeline</span>
         </div>
-
-        <div class="results-section">
-          <div class="results-section-header">
-            <span>Canonical IR</span>
-            <button class="copy-btn" id="copy-canonical">Copy</button>
-          </div>
-          <pre id="out-canonical" class="results-pre"></pre>
+        <div class="pipeline-steps" id="pipeline-steps">
+          <div class="pipeline-empty">Run a problem to see pipeline steps.</div>
         </div>
-
-        <div class="results-section results-section--scene">
-          <div class="results-section-header results-section-header--scene">
-            <span>Scene Graph</span>
-            <button class="copy-btn" id="copy-scene">Copy</button>
-          </div>
-          <pre id="out-scene" class="results-pre"></pre>
-        </div>
-
       </div>
     </div>
 

@@ -1,8 +1,3 @@
-Cho đường tròn (O) có đường kính CD, tiếp tuyến tại C là đường thẳng Cx. Lấy điểm E thuộc đường tròn (O) (E ≠ C, D). Qua O kẻ đường thẳng vuông góc với CE, cắt Cx tại A.
-a) Chứng minh rằng AE là tiếp tuyến của đường tròn (O).
-b) Qua D kẻ tiếp tuyến với đường tròn (O), tiếp tuyến này cắt AE tại B. Chứng minh rằng: AC + BD = AB và tam giác AOB vuông tại O
-c) Kẻ EH ⟂ CD tại H. Chứng minh rằng AD và BC cắt nhau tại trung điểm của EH.
-
 Cho một đường tròn tâm O có đường kính là CD. Qua C vẽ tiếp tuyến Cx với đường tròn. Cho E là một điểm trên đường tròn tâm O. Qua O vẽ một đường thẳng vuông góc với đoạn CE và cắt đường tiếp tuyến Cx tại A.
 a) Chứng minh rằng AE là một tiếp tuyến của đường tròn tâm O.
 b) Vẽ tiếp tuyến với đường tròn O tại D. Tiếp tuyến này cắt AE tại B. Chứng minh rằng AC + BD = AB và tam giác AOB vuông tại đỉnh O.

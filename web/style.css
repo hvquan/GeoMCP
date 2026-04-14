@@ -45,7 +45,8 @@
 
     .input-bar textarea {
       flex: 1;
-      min-height: 92px;
+      min-height: 140px;
+      overflow-y: auto;
       resize: vertical;
       border: 1px solid #cbd5e1;
       border-radius: 10px;
@@ -200,10 +201,10 @@
       padding: 20px;
     }
 
-    /* ── Results panel (DSL / Canonical / Scene graph) ────── */
+    /* ── Pipeline panel ────────────────────────────────────── */
 
-    .results-panel {
-      flex: 0 0 360px;
+    .pipeline-panel {
+      flex: 0 0 380px;
       display: flex;
       flex-direction: column;
       border-left: 1px solid #e2e8f0;
@@ -211,48 +212,120 @@
       overflow: hidden;
     }
 
-    .results-section {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    .results-section:last-child { border-bottom: none; }
-
-    .results-section-header {
+    .pipeline-panel-header {
       font-size: 11px;
       font-weight: 700;
       letter-spacing: .06em;
       text-transform: uppercase;
       color: #64748b;
-      background: #f8fafc;
-      padding: 6px 10px;
+      background: #f1f5f9;
+      padding: 7px 12px;
       border-bottom: 1px solid #e2e8f0;
       flex-shrink: 0;
-      display: flex;
-      align-items: center;
     }
 
-    .results-section-header--scene {
-      color: #7c3aed;
-      background: #f5f3ff;
-      border-bottom-color: #ddd6fe;
-    }
-
-    .results-pre {
+    .pipeline-steps {
       flex: 1;
       min-height: 0;
-      overflow: auto;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .pipeline-empty {
+      padding: 24px 16px;
+      color: #94a3b8;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .pipeline-step {
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .pipeline-step:last-child { border-bottom: none; }
+
+    .pipeline-step-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+      user-select: none;
+      background: #f8fafc;
+      transition: background 0.1s;
+    }
+    .pipeline-step-header:hover { background: #f1f5f9; }
+
+    .pipeline-step-badge {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      color: #475569;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .pipeline-step-label {
+      flex: 1;
+      font-size: 11px;
+      font-weight: 600;
+      color: #334155;
+      letter-spacing: .02em;
+    }
+
+    .pipeline-step-toggle {
+      font-size: 10px;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+
+    .pipeline-step-body {
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.2s ease;
+    }
+    .pipeline-step-body.open {
+      max-height: 600px;
+    }
+
+    .pipeline-step-pre {
       margin: 0;
       padding: 8px 10px;
       font-family: "JetBrains Mono", "Fira Mono", "Cascadia Code", monospace;
-      font-size: 11px;
-      line-height: 1.55;
+      font-size: 10.5px;
+      line-height: 1.5;
       white-space: pre-wrap;
       background: #fff;
       color: #1e293b;
+      overflow-x: auto;
+      border-top: 1px solid #f1f5f9;
     }
+
+    .pipeline-step-copy {
+      all: unset;
+      cursor: pointer;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: #e2e8f0;
+      color: #475569;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .pipeline-step-copy:hover { background: #cbd5e1; }
+    .pipeline-step-copy.copied { background: #dcfce7 !important; color: #166534 !important; }
+
+    /* colour-code certain key steps */
+    .pipeline-step[data-label="DSL result"] .pipeline-step-badge        { background: #dbeafe; color: #1d4ed8; }
+    .pipeline-step[data-label="Canonical result"] .pipeline-step-badge  { background: #fef9c3; color: #854d0e; }
+    .pipeline-step[data-label="Scene graph"] .pipeline-step-badge       { background: #f3e8ff; color: #7c3aed; }
 
     /* ── Utilities ─────────────────────────────────────────── */
 
