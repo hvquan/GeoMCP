@@ -46,6 +46,8 @@ export interface InteractionMeta {
   hitTarget?: HitTarget;
   kind?: InteractionKind;
   reason?: string;
+  /** For change_angle points: the circle ID this point is constrained to lie on. */
+  constrainedToCircle?: string;
 }
 
 export interface BaseSceneObject {

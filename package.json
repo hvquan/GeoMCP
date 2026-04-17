@@ -13,13 +13,13 @@
     "test:capture": "env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen tsx tests/capture-llm.mts",
     "test:manual": "tsx tests/run-jsonc.mts",
     "mcp": "tsx src/index.ts",
-    "mcp:debug": "NODE_OPTIONS='--inspect --enable-source-maps' tsx src/index.ts",
+    "mcp:debug": "node --inspect --enable-source-maps --import tsx src/index.ts",
     "mcp:local": "pgrep -x ollama >/dev/null || (ollama serve &>/tmp/ollama.log & sleep 2); env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen tsx src/index.ts",
     "start": "node dist/index.js",
     "web": "tsx src/webapp.ts",
-    "web:debug": "NODE_OPTIONS='--inspect --enable-source-maps' tsx src/webapp.ts",
+    "web:debug": "node --inspect --enable-source-maps --import tsx src/webapp.ts",
     "web:local": "pkill -f 'tsx src/webapp' 2>/dev/null; sleep 0.3; pgrep -x ollama >/dev/null || (ollama serve &>/tmp/ollama.log & sleep 2); env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen tsx src/webapp.ts",
-    "web:local:debug": "pkill -f 'tsx src/webapp' 2>/dev/null; sleep 0.3; pgrep -x ollama >/dev/null || (ollama serve &>/tmp/ollama.log & sleep 2); env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen NODE_OPTIONS='--inspect --enable-source-maps' tsx src/webapp.ts",
+    "web:local:debug": "pkill -f 'node.*webapp' 2>/dev/null; sleep 0.3; pgrep -x ollama >/dev/null || (ollama serve &>/tmp/ollama.log & sleep 2); env -u GEOMCP_OPENAI_API_KEY -u OPENAI_API_KEY GEOMCP_OPENAI_BASE_URL=http://localhost:11434/v1 GEOMCP_OPENAI_MODEL=geomcp-qwen node --inspect --enable-source-maps --import tsx src/webapp.ts",
     "start:web": "node dist/webapp.js"
   },
   "keywords": [

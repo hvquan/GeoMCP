@@ -70,6 +70,7 @@ export function buildSceneGraph(
             draggable: isFree || isAnglePt,
             editMode:  isFree ? "move_point" : isAnglePt ? "change_angle" : "none",
             kind:      isFree ? "free_point" : isAnglePt ? "parameter_handle" : "derived_point",
+            ...(isAnglePt ? { constrainedToCircle: c.circle } : {}),
           },
         });
         break;

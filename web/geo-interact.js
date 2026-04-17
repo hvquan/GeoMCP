@@ -187,8 +187,21 @@ function interactSvg(container, scene, restoreViewBox = null, opts = {}) {
       if (Math.sqrt((pos.x - cx) ** 2 + (pos.y - cy) ** 2) > 14) continue;
       const pointId = g.getAttribute("data-point-id");
       const mathPos = canvasToMath ? canvasToMath(cx, cy) : null;
+      // If this point is constrained to a circle, find that circle for snap projection.
+      let circleConstraint = null;
+      if (meta?.constrainedToCircle) {
+        const cc = svg.querySelector(`circle[data-id="${CSS.escape(meta.constrainedToCircle)}"]`);
+        if (cc) {
+          circleConstraint = {
+            cx: parseFloat(cc.getAttribute("cx")),
+            cy: parseFloat(cc.getAttribute("cy")),
+            r:  parseFloat(cc.getAttribute("r")),
+          };
+        }
+      }
       drag = { mode: "point", pointId, g, dot,
-               startSvg: { x: cx, y: cy }, startMathX: mathPos?.x ?? 0, startMathY: mathPos?.y ?? 0 };
+               startSvg: { x: cx, y: cy }, startMathX: mathPos?.x ?? 0, startMathY: mathPos?.y ?? 0,
+               circleConstraint };
       clearHover();
       g.classList.add("dragging");
       g.style.cursor = "grabbing";
@@ -266,19 +279,26 @@ function interactSvg(container, scene, restoreViewBox = null, opts = {}) {
 
     // Visual-only drag feedback
     if (drag.mode === "point") {
-      drag.dot.setAttribute("cx", String(pos.x));
-      drag.dot.setAttribute("cy", String(pos.y));
+      let snapX = pos.x, snapY = pos.y;
+      if (drag.circleConstraint) {
+        const { cx: ccx, cy: ccy, r: cr } = drag.circleConstraint;
+        const dx = pos.x - ccx, dy = pos.y - ccy;
+        const d  = Math.hypot(dx, dy);
+        if (d > 1e-9) { snapX = ccx + dx / d * cr; snapY = ccy + dy / d * cr; }
+      }
+      drag.dot.setAttribute("cx", String(snapX));
+      drag.dot.setAttribute("cy", String(snapY));
       const text = drag.g.querySelector("text");
-      if (text) { text.setAttribute("x", String(pos.x + 8)); text.setAttribute("y", String(pos.y - 8)); }
+      if (text) { text.setAttribute("x", String(snapX + 8)); text.setAttribute("y", String(snapY - 8)); }
       for (const { el, end } of linesForPoint.get(drag.pointId) || []) {
-        if (end === 1) { el.setAttribute("x1", String(pos.x)); el.setAttribute("y1", String(pos.y)); }
-        else           { el.setAttribute("x2", String(pos.x)); el.setAttribute("y2", String(pos.y)); }
+        if (end === 1) { el.setAttribute("x1", String(snapX)); el.setAttribute("y1", String(snapY)); }
+        else           { el.setAttribute("x2", String(snapX)); el.setAttribute("y2", String(snapY)); }
       }
       const cc = circleByCenter.get(drag.pointId);
-      if (cc) { cc.setAttribute("cx", String(pos.x)); cc.setAttribute("cy", String(pos.y)); }
+      if (cc) { cc.setAttribute("cx", String(snapX)); cc.setAttribute("cy", String(snapY)); }
       // Live callback (fires on every move, no debounce)
       if (opts?.onDragMove && canvasToMath) {
-        const mathPos = canvasToMath(pos.x, pos.y);
+        const mathPos = canvasToMath(snapX, snapY);
         opts.onDragMove({
           type:    "drag_point",
           pointId: drag.pointId,
@@ -319,7 +339,14 @@ function interactSvg(container, scene, restoreViewBox = null, opts = {}) {
       currentDrag.g.classList.remove("dragging");
       currentDrag.g.style.cursor = "grab";
       if (!canvasToMath || !opts?.onDragEnd) return;
-      const mathPos = canvasToMath(pos.x, pos.y);
+      let snapX = pos.x, snapY = pos.y;
+      if (currentDrag.circleConstraint) {
+        const { cx: ccx, cy: ccy, r: cr } = currentDrag.circleConstraint;
+        const dx = pos.x - ccx, dy = pos.y - ccy;
+        const d  = Math.hypot(dx, dy);
+        if (d > 1e-9) { snapX = ccx + dx / d * cr; snapY = ccy + dy / d * cr; }
+      }
+      const mathPos = canvasToMath(snapX, snapY);
       opts.onDragEnd({
         type: "drag_point",
         pointId: currentDrag.pointId,
